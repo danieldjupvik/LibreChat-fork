@@ -1,4 +1,5 @@
 import { initPricingData } from './modelBadges';
+import ResponseCost from './ResponseCost';
 
 /**
  * Initialize forked custom features
@@ -9,6 +10,10 @@ export const initialize = () => {
   initPricingData().catch(err => {
     console.error('Failed to initialize pricing data:', err);
   });
+};
+
+export {
+  ResponseCost
 };
 
 export default {
