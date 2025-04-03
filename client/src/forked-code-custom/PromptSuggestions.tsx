@@ -103,6 +103,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   const [, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
   const { promptCategories, defaultPrompts } = usePromptSuggestions();
   const initialLoadRef = useRef(true);
+  const timersRef = useRef<NodeJS.Timeout[]>([]);
 
   // State for active category (null means no category selected)
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
@@ -130,10 +131,23 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   const displayPrompts = useMemo(() => currentPrompts.slice(0, 4), [currentPrompts]);
 
   // Animation timing configuration
-  const initialDelay = 600; // Wait for SplitText to animate
-  const categoryDelay = 200; // Reduced from 400 to make category buttons appear faster
-  const promptsStartDelay = 400; // Add delay before starting prompt animations
-  const staggerDelay = 150; // Delay between each item
+  const animationConfig = useMemo(
+    () => ({
+      initialDelay: 600, // Wait for SplitText to animate
+      categoryDelay: 200, // Reduced from 400 to make category buttons appear faster
+      promptsStartDelay: 400, // Add delay before starting prompt animations
+      staggerDelay: 150, // Delay between each item
+    }),
+    [],
+  );
+
+  // Clean up all timers when component unmounts
+  useEffect(() => {
+    return () => {
+      timersRef.current.forEach(clearTimeout);
+      timersRef.current = [];
+    };
+  }, []);
 
   // Toggle category selection
   const handleCategoryClick = useCallback((categoryId: string) => {
@@ -144,7 +158,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   useEffect(() => {
     if (!initialLoadRef.current) return;
 
-    let timers: NodeJS.Timeout[] = [];
+    const { initialDelay, categoryDelay } = animationConfig;
 
     // Start overall component visibility animation after initial delay
     const visibilityTimer = setTimeout(() => {
@@ -154,19 +168,18 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
       const categoriesTimer = setTimeout(() => {
         setAnimatedCategories(true);
       }, categoryDelay);
-      timers.push(categoriesTimer);
-    }, initialDelay);
-    timers.push(visibilityTimer);
 
-    // Clean up all timers
-    return () => timers.forEach(clearTimeout);
-  }, [categoryDelay, initialDelay]);
+      timersRef.current.push(categoriesTimer);
+    }, initialDelay);
+
+    timersRef.current.push(visibilityTimer);
+  }, [animationConfig]);
 
   // Staggered animation for individual prompt items - only on initial load
   useEffect(() => {
     if (!isVisible || !initialLoadRef.current) return;
 
-    let timers: NodeJS.Timeout[] = [];
+    const { promptsStartDelay, staggerDelay } = animationConfig;
 
     // Delay prompt animations to start after categories are visible
     const initialPromptDelay = setTimeout(() => {
@@ -179,9 +192,14 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
       // Add each item one by one with delay
       indices.forEach((index, i) => {
         const timer = setTimeout(() => {
-          setAnimatedItems((prev) => [...prev, index]);
+          setAnimatedItems((prev) => {
+            // Avoid unnecessary re-renders by checking if item is already included
+            if (prev.includes(index)) return prev;
+            return [...prev, index];
+          });
         }, staggerDelay * i);
-        timers.push(timer);
+
+        timersRef.current.push(timer);
       });
 
       // Mark initial load as complete after animations
@@ -191,13 +209,12 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
         },
         staggerDelay * indices.length + 100,
       );
-      timers.push(finalTimer);
-    }, promptsStartDelay);
-    timers.push(initialPromptDelay);
 
-    // Clean up all timers
-    return () => timers.forEach(clearTimeout);
-  }, [isVisible, displayPrompts, staggerDelay, promptsStartDelay]);
+      timersRef.current.push(finalTimer);
+    }, promptsStartDelay);
+
+    timersRef.current.push(initialPromptDelay);
+  }, [isVisible, displayPrompts, animationConfig]);
 
   const handleSelectPrompt = useCallback(
     (text: string) => {
@@ -220,19 +237,15 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
     return null;
   }
 
-  return (
-    <div
-      className={cn(
-        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0',
-        isVisible ? 'opacity-100' : 'opacity-0',
-      )}
-    >
-      {/* Category Buttons */}
+  // Memoized category buttons to prevent re-rendering on animation updates
+  const CategoryButtons = useMemo(
+    () => (
       <div
         className={cn(
           'mb-6 flex flex-row flex-wrap gap-2.5 text-sm transition-opacity duration-500 max-sm:justify-evenly',
           animatedCategories ? 'opacity-100' : 'opacity-0',
         )}
+        style={{ willChange: 'opacity' }} // Hint for better animation performance
       >
         {promptCategories.map((category) => (
           <button
@@ -246,6 +259,20 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
           </button>
         ))}
       </div>
+    ),
+    [promptCategories, animatedCategories, activeCategoryId, handleCategoryClick],
+  );
+
+  return (
+    <div
+      className={cn(
+        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0',
+        isVisible ? 'opacity-100' : 'opacity-0',
+      )}
+      style={{ willChange: 'opacity' }} // Hint for better animation performance
+    >
+      {/* Category Buttons */}
+      {CategoryButtons}
 
       {/* Prompt Suggestions */}
       <div className="flex flex-col text-foreground">
@@ -258,6 +285,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
                 ? 'translate-y-0 transform opacity-100'
                 : 'translate-y-4 transform opacity-0',
             )}
+            style={{ willChange: 'transform, opacity' }} // Hint for better animation performance
           >
             <button
               className="w-full rounded-md py-2 text-left text-text-primary hover:bg-surface-tertiary sm:px-3"
