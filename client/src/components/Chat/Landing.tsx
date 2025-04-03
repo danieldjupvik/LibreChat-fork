@@ -120,6 +120,13 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       margin = 'mb-12';
     }
 
+    if (contentHeight > 334) {
+      margin = 'mb-28';
+      if (window.innerWidth < 640) {
+        margin = 'mb-0';
+      }
+    }
+
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 

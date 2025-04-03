@@ -223,7 +223,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   return (
     <div
       className={cn(
-        'mt-6 w-full px-4 transition-opacity duration-500 sm:px-0',
+        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0',
         isVisible ? 'opacity-100' : 'opacity-0',
       )}
     >
