@@ -68,8 +68,8 @@ export const usePromptSuggestions = () => {
         icon: <Code className="max-sm:block" />,
         prompts: [
           { text: 'Write code to invert a binary search tree in Python' },
-          { text: "What's the difference between Promise.all and Promise.allSettled?" },
-          { text: "Explain React's useEffect cleanup function" },
+          { text: 'What\'s the difference between Promise.all and Promise.allSettled?' },
+          { text: 'Explain React\'s useEffect cleanup function' },
           { text: 'Best practices for error handling in async/await' },
         ],
       },
@@ -78,7 +78,7 @@ export const usePromptSuggestions = () => {
         name: 'Learn',
         icon: <GraduationCap className="max-sm:block" />,
         prompts: [
-          { text: "Beginner's guide to TypeScript" },
+          { text: 'Beginner\'s guide to TypeScript' },
           { text: 'Explain the CAP theorem in distributed systems' },
           { text: 'Why is AI so expensive?' },
           { text: 'Are black holes real?' },
@@ -156,7 +156,9 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
 
   // Initial animation sequence
   useEffect(() => {
-    if (!initialLoadRef.current) return;
+    if (!initialLoadRef.current) {
+      return;
+    }
 
     const { initialDelay, categoryDelay } = animationConfig;
 
@@ -177,7 +179,9 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
 
   // Staggered animation for individual prompt items - only on initial load
   useEffect(() => {
-    if (!isVisible || !initialLoadRef.current) return;
+    if (!isVisible || !initialLoadRef.current) {
+      return;
+    }
 
     const { promptsStartDelay, staggerDelay } = animationConfig;
 
@@ -194,7 +198,9 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
         const timer = setTimeout(() => {
           setAnimatedItems((prev) => {
             // Avoid unnecessary re-renders by checking if item is already included
-            if (prev.includes(index)) return prev;
+            if (prev.includes(index)) {
+              return prev;
+            }
             return [...prev, index];
           });
         }, staggerDelay * i);
@@ -233,10 +239,6 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
     [setActivePrompt],
   );
 
-  if (!currentPrompts.length) {
-    return null;
-  }
-
   // Memoized category buttons to prevent re-rendering on animation updates
   const CategoryButtons = useMemo(
     () => (
@@ -262,6 +264,10 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
     ),
     [promptCategories, animatedCategories, activeCategoryId, handleCategoryClick],
   );
+
+  if (!currentPrompts.length) {
+    return null;
+  }
 
   return (
     <div
