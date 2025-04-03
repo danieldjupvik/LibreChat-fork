@@ -7,6 +7,7 @@ import { BirthdayIcon, TooltipAnchor, SplitText } from '~/components';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
 import { getIconEndpoint, getEntity } from '~/utils';
+import { PromptSuggestions } from '~/forked-code-custom';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
@@ -191,6 +192,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             {description}
           </div>
         )}
+        <PromptSuggestions />
       </div>
     </div>
   );

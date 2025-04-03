@@ -75,3 +75,10 @@ div[role='listbox'] div[role='option'] [class^='icon-'].shrink-0.overflow-hidden
   width: 24px !important;
   height: 24px !important;
 }
+
+/* Hide the margin-bottom on the chat container on desktop screens */
+@media screen and (min-width: 640px) {
+  form.mx-auto.flex.flex-row.gap-3.sm\:px-2 {
+    margin-bottom: 0 !important;
+  }
+}
