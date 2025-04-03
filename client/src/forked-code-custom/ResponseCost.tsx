@@ -260,7 +260,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   return (
     <button
       className={cn(
-        'ml-0 flex items-center gap-1.5 rounded-md p-1 text-xs hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+        'ml-0 flex items-center gap-1.5 rounded-md p-1 text-sm hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
         !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
       )}
       type="button"
