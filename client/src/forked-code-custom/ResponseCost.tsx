@@ -250,7 +250,15 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     return () => {
       isMounted = false;
     };
-  }, [message.messageId, message.model, conversation?.spec]);
+  }, [
+    message.messageId,
+    message.model,
+    conversation?.spec,
+    conversation?.endpoint,
+    getPricingFromSpec,
+    message,
+    shouldShowCost,
+  ]);
 
   // Don't render anything for free or missing cost
   if (!shouldShowCost() || cost === null || cost <= 0) {
