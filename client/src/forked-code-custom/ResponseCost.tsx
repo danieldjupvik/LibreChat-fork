@@ -34,7 +34,9 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
   // Check if message should display cost (assistant message with token data)
   const shouldShowCost = () => {
-    if (message.isCreatedByUser) return false;
+    if (message.isCreatedByUser) {
+      return false;
+    }
 
     const msgWithTokens = message as MessageWithTokens;
     return (
@@ -45,12 +47,16 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
   // Find model spec by name or spec identifier
   const findModelSpec = (modelName: string, specName?: string): TModelSpec | null => {
-    if (!modelSpecs?.length) return null;
+    if (!modelSpecs?.length) {
+      return null;
+    }
 
     // Try spec name first
     if (specName) {
       const bySpec = modelSpecs.find((spec) => spec.name === specName);
-      if (bySpec) return bySpec;
+      if (bySpec) {
+        return bySpec;
+      }
     }
 
     // Then try model name
@@ -105,8 +111,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   // Calculate message cost
   useEffect(() => {
     // Skip calculations if not needed
-    if (!shouldShowCost() || !conversation?.endpoint) return;
-    if (calculationComplete.current) return;
+    if (!shouldShowCost() || !conversation?.endpoint) {
+      return;
+    }
+    if (calculationComplete.current) {
+      return;
+    }
 
     let isMounted = true;
 
