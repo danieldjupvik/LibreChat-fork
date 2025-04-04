@@ -1,4 +1,7 @@
-import { initPricingData } from './modelBadges';
+import { initPricingData, useModelBadges, ModelBadges } from './modelBadges';
+export { default as PromptSuggestions } from './PromptSuggestions';
+export { CapabilityIcons } from './CapabilityIcons';
+export { useModelBadges, ModelBadges } from './modelBadges';
 
 /**
  * Initialize forked custom features
@@ -6,11 +9,11 @@ import { initPricingData } from './modelBadges';
  */
 export const initialize = () => {
   // Pre-fetch pricing data in the background
-  initPricingData().catch(err => {
+  initPricingData().catch((err) => {
     console.error('Failed to initialize pricing data:', err);
   });
 };
 
 export default {
   initialize,
-}; 
+};
