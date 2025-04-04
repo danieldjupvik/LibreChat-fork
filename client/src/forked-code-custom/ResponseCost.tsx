@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, useRef } from 'react';
+import { memo, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { TMessage, TConversation, TModelSpec } from 'librechat-data-provider';
 import { TooltipAnchor } from '../components/ui/Tooltip';
 import { DollarSign } from 'lucide-react';
@@ -30,10 +30,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
   // Get model specs from startup config
   const { data: startupConfig } = useGetStartupConfig();
-  const modelSpecs = startupConfig?.modelSpecs?.list || [];
+  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list || [], [startupConfig]);
 
   // Check if message should display cost (assistant message with token data)
-  const shouldShowCost = () => {
+  const shouldShowCost = useCallback(() => {
     if (message.isCreatedByUser) {
       return false;
     }
@@ -43,10 +43,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       (typeof msgWithTokens.promptTokens === 'number' && msgWithTokens.promptTokens > 0) ||
       (typeof msgWithTokens.tokenCount === 'number' && msgWithTokens.tokenCount > 0)
     );
-  };
+  }, [message]);
 
   // Find model spec by name or spec identifier
-  const findModelSpec = (modelName: string, specName?: string): TModelSpec | null => {
+  const findModelSpec = useCallback((modelName: string, specName?: string): TModelSpec | null => {
     if (!modelSpecs?.length) {
       return null;
     }
@@ -64,10 +64,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       modelSpecs.find((spec) => spec.preset?.model === modelName || spec.label === modelName) ||
       null
     );
-  };
+  }, [modelSpecs]);
 
   // Get pricing from model spec
-  const getPricingFromSpec = (modelName: string, specName?: string) => {
+  const getPricingFromSpec = useCallback((modelName: string, specName?: string) => {
     const spec = findModelSpec(modelName, specName);
 
     if (!spec?.badges) {
@@ -106,7 +106,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       outputCostPerToken,
       isFree: isFreePricing,
     };
-  };
+  }, [findModelSpec]);
 
   // Calculate message cost
   useEffect(() => {
