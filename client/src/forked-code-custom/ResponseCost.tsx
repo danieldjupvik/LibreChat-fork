@@ -2,9 +2,8 @@ import { memo, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { TMessage, TConversation, TModelSpec } from 'librechat-data-provider';
 import { TooltipAnchor } from '../components/ui/Tooltip';
 import { DollarSign } from 'lucide-react';
-import { findBestModelMatch, fetchPricingData } from './modelBadges';
+import { fetchModelInfo } from './litellmInfoAdapter';
 import { cn } from '../utils';
-import { useGetStartupConfig } from '../data-provider';
 
 // Extend TMessage type to include token properties
 interface MessageWithTokens extends TMessage {
@@ -18,19 +17,12 @@ type ResponseCostProps = {
   isLast: boolean;
 };
 
-// Cache for model pricing calculations to ensure consistent pricing display
-const modelPricingCache = new Map<string, { cost: number | null; isFree: boolean }>();
-
 const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [cost, setCost] = useState<number | null>(null);
   const [tokenInfo, setTokenInfo] = useState<{ totalTokens: number | null }>({ totalTokens: null });
 
   // Track if calculation is already complete
   const calculationComplete = useRef(false);
-
-  // Get model specs from startup config
-  const { data: startupConfig } = useGetStartupConfig();
-  const modelSpecs = useMemo(() => startupConfig?.modelSpecs?.list || [], [startupConfig]);
 
   // Check if message should display cost (assistant message with token data)
   const shouldShowCost = useCallback(() => {
@@ -45,68 +37,33 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     );
   }, [message]);
 
-  // Find model spec by name or spec identifier
-  const findModelSpec = useCallback((modelName: string, specName?: string): TModelSpec | null => {
-    if (!modelSpecs?.length) {
-      return null;
+  // Helper function to get the correct model name for a message
+  const getMessageModel = useCallback((msg: TMessage): string | undefined => {
+    // Priority: direct model property
+    if (msg.model) {
+      return msg.model;
     }
 
-    // Try spec name first
-    if (specName) {
-      const bySpec = modelSpecs.find((spec) => spec.name === specName);
-      if (bySpec) {
-        return bySpec;
+    // Then check model_name
+    if ((msg as any).model_name) {
+      return (msg as any).model_name;
+    }
+
+    // Check metadata
+    const msgWithMetadata = msg as any;
+    if (msgWithMetadata.metadata && typeof msgWithMetadata.metadata === 'object') {
+      if (msgWithMetadata.metadata.model) {
+        return msgWithMetadata.metadata.model;
       }
     }
 
-    // Then try model name
-    return (
-      modelSpecs.find((spec) => spec.preset?.model === modelName || spec.label === modelName) ||
-      null
-    );
-  }, [modelSpecs]);
+    return undefined;
+  }, []);
 
-  // Get pricing from model spec
-  const getPricingFromSpec = useCallback((modelName: string, specName?: string) => {
-    const spec = findModelSpec(modelName, specName);
-
-    if (!spec?.badges) {
-      return {
-        inputCostPerToken: null,
-        outputCostPerToken: null,
-        isFree: false,
-      };
-    }
-
-    const { inputPrice, outputPrice, isFree = false } = spec.badges;
-
-    // If explicitly marked as free
-    if (isFree) {
-      return {
-        inputCostPerToken: 0,
-        outputCostPerToken: 0,
-        isFree: true,
-      };
-    }
-
-    // Convert from per million tokens to per token
-    const inputCostPerToken =
-      inputPrice !== undefined && inputPrice !== null ? inputPrice / 1000000 : null;
-
-    const outputCostPerToken =
-      outputPrice !== undefined && outputPrice !== null ? outputPrice / 1000000 : null;
-
-    // Check if zero/null prices (free)
-    const isFreePricing =
-      (inputCostPerToken === 0 || inputCostPerToken === null) &&
-      (outputCostPerToken === 0 || outputCostPerToken === null);
-
-    return {
-      inputCostPerToken,
-      outputCostPerToken,
-      isFree: isFreePricing,
-    };
-  }, [findModelSpec]);
+  // Reset calculation when message or model changes
+  useEffect(() => {
+    calculationComplete.current = false;
+  }, [message.messageId, message.model]);
 
   // Calculate message cost
   useEffect(() => {
@@ -122,36 +79,20 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
     const calculateCost = async () => {
       try {
-        // CRITICAL: Always use the message's original model
-        const messageModel = message.model;
+        // Get the model for THIS specific message
+        const messageModel = getMessageModel(message);
 
         // If this message doesn't have model information, we can't calculate cost
         if (!messageModel) {
           return;
         }
 
-        // Create a unique key using message ID to ensure per-message cache
-        const messageId = message.messageId;
-        const cacheKey = messageId;
-
-        // Check cache for existing calculation
-        if (modelPricingCache.has(cacheKey)) {
-          const cachedResult = modelPricingCache.get(cacheKey);
-          if (cachedResult && isMounted) {
-            setCost(cachedResult.cost);
-            calculationComplete.current = true;
-            return;
-          }
-        }
-
-        // Get token count FROM THIS SPECIFIC MESSAGE
+        // Check token count FROM THIS SPECIFIC MESSAGE
         const msgWithTokens = message as MessageWithTokens;
         const totalTokens = msgWithTokens.promptTokens || msgWithTokens.tokenCount || 0;
 
         // No tokens found for this message
         if (totalTokens <= 0) {
-          modelPricingCache.set(cacheKey, { cost: null, isFree: true });
-
           if (isMounted) {
             calculationComplete.current = true;
           }
@@ -161,48 +102,13 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
         // Update token info for this message
         setTokenInfo({ totalTokens });
 
-        // Get pricing info for THIS MESSAGE'S MODEL
-        const specName = conversation.spec !== null ? conversation.spec : undefined;
-        const { inputCostPerToken, outputCostPerToken, isFree } = getPricingFromSpec(
-          messageModel,
-          specName,
-        );
+        // Get pricing data from LiteLLM for THIS MESSAGE'S model
+        const modelInfoMap = await fetchModelInfo();
 
-        // Model is marked as free
-        if (isFree) {
-          modelPricingCache.set(cacheKey, { cost: 0, isFree: true });
+        // Direct lookup by model name
+        const modelInfo = modelInfoMap[messageModel];
 
-          if (isMounted) {
-            setCost(0);
-            calculationComplete.current = true;
-          }
-          return;
-        }
-
-        // Use output cost from specs if available
-        if (outputCostPerToken !== null) {
-          const totalCost = totalTokens * outputCostPerToken;
-
-          if (isMounted) {
-            if (totalCost === 0) {
-              modelPricingCache.set(cacheKey, { cost: 0, isFree: true });
-              setCost(0);
-            } else {
-              modelPricingCache.set(cacheKey, { cost: totalCost, isFree: false });
-              setCost(totalCost);
-            }
-            calculationComplete.current = true;
-          }
-          return;
-        }
-
-        // Fallback to LiteLLM pricing data for THIS MESSAGE'S MODEL
-        const pricingData = await fetchPricingData();
-        const modelMatch = findBestModelMatch(messageModel, pricingData);
-
-        if (!modelMatch) {
-          modelPricingCache.set(cacheKey, { cost: null, isFree: true });
-
+        if (!modelInfo) {
           if (isMounted) {
             calculationComplete.current = true;
           }
@@ -210,12 +116,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
         }
 
         // Calculate cost using LiteLLM data
-        const costPerToken = modelMatch.data.output_cost_per_token || 0;
+        const costPerToken = modelInfo.output_cost_per_token || 0;
 
         // Zero cost model (free)
         if (costPerToken === 0) {
-          modelPricingCache.set(cacheKey, { cost: 0, isFree: true });
-
           if (isMounted) {
             setCost(0);
             calculationComplete.current = true;
@@ -223,18 +127,11 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
           return;
         }
 
-        // Calculate total cost FOR THIS SPECIFIC MESSAGE
-        // using THIS MESSAGE'S token count and THIS MESSAGE'S model price
+        // Calculate total cost
         const totalCost = totalTokens * costPerToken;
 
         if (isMounted) {
-          if (totalCost > 0) {
-            modelPricingCache.set(cacheKey, { cost: totalCost, isFree: false });
-            setCost(totalCost);
-          } else {
-            modelPricingCache.set(cacheKey, { cost: 0, isFree: true });
-            setCost(0);
-          }
+          setCost(totalCost);
           calculationComplete.current = true;
         }
       } catch (error) {
@@ -253,11 +150,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   }, [
     message.messageId,
     message.model,
-    conversation?.spec,
     conversation?.endpoint,
-    getPricingFromSpec,
     message,
     shouldShowCost,
+    getMessageModel,
   ]);
 
   // Don't render anything for free or missing cost
