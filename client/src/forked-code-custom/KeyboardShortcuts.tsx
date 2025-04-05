@@ -1,6 +1,10 @@
 /**
  * Keyboard shortcuts for LibreChat
  * Forked implementation to add custom keyboard shortcuts without modifying upstream files
+ *
+ * NOTE: This implementation uses DOM queries to find elements and trigger clicks,
+ * which may be fragile if the UI structure changes. In the long term, consider
+ * proposing adding data-shortcut attributes to the upstream repo for better stability.
  */
 
 // Store reference to event listeners for cleanup
@@ -59,6 +63,57 @@ export const cleanup = () => {
 };
 
 /**
+ * Helper function to simulate a click on an element
+ * with fallback handling options
+ */
+const safelyClickElement = (
+  element: HTMLElement | null | undefined,
+  actionName: string,
+  fallbackOptions?: {
+    urlPath?: string,
+    stateAction?: () => void
+  }
+) => {
+  if (element) {
+    try {
+      element.click();
+      console.log(`${actionName} via keyboard shortcut`);
+      return true;
+    } catch (error) {
+      console.error(`Error clicking ${actionName} element:`, error);
+    }
+  } else {
+    console.warn(`${actionName} element not found in the DOM`);
+  }
+
+  // Try fallback options if provided
+  if (fallbackOptions?.urlPath) {
+    try {
+      // Check if we're not already on this path
+      if (!window.location.pathname.endsWith(fallbackOptions.urlPath)) {
+        window.location.href = fallbackOptions.urlPath;
+        console.log(`Navigated to ${fallbackOptions.urlPath} as fallback`);
+        return true;
+      }
+    } catch (error) {
+      console.error(`Error using fallback URL for ${actionName}:`, error);
+    }
+  }
+
+  if (fallbackOptions?.stateAction) {
+    try {
+      fallbackOptions.stateAction();
+      console.log(`Executed state action for ${actionName}`);
+      return true;
+    } catch (error) {
+      console.error(`Error executing state action for ${actionName}:`, error);
+    }
+  }
+
+  return false;
+};
+
+/**
  * Handler for the new chat shortcut
  *
  * This implementation clicks the new chat button in the sidebar
@@ -66,20 +121,19 @@ export const cleanup = () => {
 const handleNewChat = () => {
   console.log('⌨️ Keyboard shortcut activated: New Chat (⌘+Shift+O)');
 
-  try {
-    // Find the new chat button and click it programmatically
-    const newChatButton = document.querySelector('[data-testid="nav-new-chat-button"]') as HTMLElement;
+  // Try multiple selectors for robustness
+  const newChatButton =
+    document.querySelector('[data-testid="nav-new-chat-button"]') ||
+    document.querySelector('a[href="/c/new"]') ||
+    document.querySelector('a[href="/"]') ||
+    document.querySelector('a[aria-label*="new chat" i]') ||
+    document.querySelector('button[aria-label*="new chat" i]');
 
-    if (newChatButton) {
-      // Simulate a click on the new chat button
-      newChatButton.click();
-      console.log('New chat created via shortcut');
-    } else {
-      console.warn('New chat button not found in the DOM');
-    }
-  } catch (error) {
-    console.error('Error creating new chat:', error);
-  }
+  safelyClickElement(
+    newChatButton as HTMLElement,
+    'New chat',
+    { urlPath: '/c/new' }
+  );
 };
 
 /**
@@ -88,36 +142,24 @@ const handleNewChat = () => {
 const handleToggleSidebar = () => {
   console.log('⌨️ Keyboard shortcut activated: Toggle Sidebar (⌘+B)');
 
-  try {
-    // Try multiple possible selectors for the sidebar toggle button
-    const sidebarToggle =
-      document.querySelector('[aria-label="Toggle sidebar"]') ||
-      document.querySelector('.sidebar-button') ||
-      document.querySelector('[aria-label="Open sidebar"]') ||
-      document.querySelector('[aria-label="Close sidebar"]') ||
-      document.querySelector('button[title*="sidebar" i]') ||
-      document.querySelector('button.mobile-nav-button');
+  // Try multiple possible selectors for the sidebar toggle button
+  const sidebarToggle =
+    document.querySelector('[aria-label="Toggle sidebar"]') ||
+    document.querySelector('.sidebar-button') ||
+    document.querySelector('[aria-label="Open sidebar"]') ||
+    document.querySelector('[aria-label="Close sidebar"]') ||
+    document.querySelector('button[title*="sidebar" i]') ||
+    document.querySelector('button.mobile-nav-button');
 
-    if (sidebarToggle instanceof HTMLElement) {
-      sidebarToggle.click();
-      console.log('Sidebar toggled via shortcut');
-    } else {
-      // Try to find the menu icon buttons often used on mobile/responsive designs
-      const mobileMenuBurger =
-        document.querySelector('.mobile-nav-button') ||
-        document.querySelector('[aria-label*="menu" i]') ||
-        document.querySelector('.menu-icon') ||
-        document.querySelector('.hamburger-menu');
+  // If main toggle not found, try to find mobile menu buttons
+  if (!safelyClickElement(sidebarToggle as HTMLElement, 'Sidebar toggle')) {
+    const mobileMenuBurger =
+      document.querySelector('.mobile-nav-button') ||
+      document.querySelector('[aria-label*="menu" i]') ||
+      document.querySelector('.menu-icon') ||
+      document.querySelector('.hamburger-menu');
 
-      if (mobileMenuBurger instanceof HTMLElement) {
-        mobileMenuBurger.click();
-        console.log('Mobile menu toggled via shortcut');
-      } else {
-        console.warn('Sidebar toggle button not found in the DOM');
-      }
-    }
-  } catch (error) {
-    console.error('Error toggling sidebar:', error);
+    safelyClickElement(mobileMenuBurger as HTMLElement, 'Mobile menu toggle');
   }
 };
 
@@ -127,20 +169,14 @@ const handleToggleSidebar = () => {
 const handleStopGeneration = () => {
   console.log('⌨️ Keyboard shortcut activated: Stop Generation (Escape)');
 
-  try {
-    // Find the stop generation button and click it if it exists
-    const stopButton = document.querySelector('[aria-label="Stop generating"]') as HTMLElement;
+  // Try multiple selectors for the stop button
+  const stopButton =
+    document.querySelector('[aria-label="Stop generating"]') ||
+    document.querySelector('button[title*="stop" i]') ||
+    document.querySelector('button[aria-label*="stop" i]') ||
+    document.querySelector('button.stop-generating');
 
-    if (stopButton) {
-      stopButton.click();
-      console.log('Generation stopped via shortcut');
-    } else {
-      // If no stop button is found, it means nothing is being generated
-      // We can silently ignore this case
-    }
-  } catch (error) {
-    console.error('Error stopping generation:', error);
-  }
+  safelyClickElement(stopButton as HTMLElement, 'Stop generation');
 };
 
 export default {
