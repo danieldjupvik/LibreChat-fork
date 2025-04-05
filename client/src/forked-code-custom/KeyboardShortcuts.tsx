@@ -7,8 +7,13 @@
  * proposing adding data-shortcut attributes to the upstream repo for better stability.
  */
 
+import { isMacOS, getCmdKey } from './utils';
+
 // Store reference to event listeners for cleanup
 let keydownListener: ((e: KeyboardEvent) => void) | null = null;
+
+// Get the appropriate command key based on OS
+const cmdKey = getCmdKey();
 
 /**
  * Initialize keyboard shortcuts
@@ -21,9 +26,10 @@ export const initialize = () => {
 
   // Log available shortcuts
   console.log('🔑 Keyboard shortcuts initialized:');
-  console.log('- New Chat: ⌘+Shift+O (macOS) / Ctrl+Shift+O (Windows/Linux)');
+  console.log(`- New Chat: ${cmdKey}+Shift+O`);
   console.log('- Stop Generation: Escape');
-  console.log('- Toggle Sidebar: ⌘+B (macOS) / Ctrl+B (Windows/Linux)');
+  console.log(`- Toggle Sidebar: ${cmdKey}+B`);
+  console.log(`- Help: ${cmdKey}+K`);
 
   // Define the keyboard event handler
   keydownListener = (e: KeyboardEvent) => {
@@ -46,6 +52,8 @@ export const initialize = () => {
       handleStopGeneration();
       return;
     }
+
+    // Note: The help dialog (CMD+K or CTRL+K) is handled by the ShortcutsHelp component
   };
 
   // Add event listener
@@ -140,7 +148,7 @@ const handleNewChat = () => {
  * Handler to toggle sidebar visibility
  */
 const handleToggleSidebar = () => {
-  console.log('⌨️ Keyboard shortcut activated: Toggle Sidebar (⌘+B)');
+  console.log(`⌨️ Keyboard shortcut activated: Toggle Sidebar (${cmdKey}+B)`);
 
   // Try multiple possible selectors for the sidebar toggle button
   const sidebarToggle =

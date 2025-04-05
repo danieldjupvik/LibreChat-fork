@@ -1,24 +1,24 @@
 import { initModelData } from './modelBadges';
 import ResponseCost from './ResponseCost';
 import KeyboardShortcuts from './KeyboardShortcuts';
+import ShortcutsHelp from './ShortcutsHelp';
+import ForkedCustomizations from './ForkedCustomizations';
 
 /**
- * Initialize forked custom features
- * - Loads model data on app startup to avoid delays on first model selection
- * - Initializes keyboard shortcuts (⌘+Shift+O / Ctrl+Shift+O for new chat)
+ * Exports for forked customizations
+ *
+ * The initialization is now handled by the ForkedCustomizations component
+ * which mounts in the React tree. This avoids duplicate initialization.
  */
-export const initialize = () => {
-  // Pre-fetch model data in the background
-  initModelData().catch(err => {
-    console.error('Failed to initialize model data:', err);
-  });
 
-  // Initialize keyboard shortcuts
-  KeyboardShortcuts.initialize();
+export {
+  ResponseCost,
+  ShortcutsHelp,
+  ForkedCustomizations,
+  KeyboardShortcuts,
+  initModelData,
 };
 
-export { ResponseCost };
-
 export default {
-  initialize,
+  ForkedCustomizations,
 };
