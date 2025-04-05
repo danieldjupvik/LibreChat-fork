@@ -7,13 +7,13 @@
  * proposing adding data-shortcut attributes to the upstream repo for better stability.
  */
 
-import { isMacOS, getCmdKey } from './utils';
-
-// Store reference to event listeners for cleanup
-let keydownListener: ((e: KeyboardEvent) => void) | null = null;
+import { isMacOS, getCmdKey, toggleTheme } from './utils';
 
 // Get the appropriate command key based on OS
 const cmdKey = getCmdKey();
+
+// Store reference to event listeners for cleanup
+let keydownListener: ((e: KeyboardEvent) => void) | null = null;
 
 /**
  * Initialize keyboard shortcuts
@@ -29,6 +29,7 @@ export const initialize = () => {
   console.log(`- New Chat: ${cmdKey}+Shift+O`);
   console.log('- Stop Generation: Escape');
   console.log(`- Toggle Sidebar: ${cmdKey}+B`);
+  console.log(`- Toggle Theme: ${cmdKey}+Shift+D`);
   console.log(`- Help: ${cmdKey}+K`);
 
   // Define the keyboard event handler
@@ -44,6 +45,13 @@ export const initialize = () => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       handleToggleSidebar();
+      return;
+    }
+
+    // CMD+SHIFT+D (Mac) or CTRL+SHIFT+D (Windows/Linux) to toggle theme
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      handleToggleTheme();
       return;
     }
 
@@ -185,6 +193,29 @@ const handleStopGeneration = () => {
     document.querySelector('button.stop-generating');
 
   safelyClickElement(stopButton as HTMLElement, 'Stop generation');
+};
+
+/**
+ * Handler to toggle theme between light, dark, and system
+ * Cycles through the themes: dark → light → system → dark
+ */
+const handleToggleTheme = () => {
+  console.log(`⌨️ Keyboard shortcut activated: Toggle Theme (${cmdKey}+Shift+D)`);
+
+  try {
+    // Toggle the theme using our utility function that matches the ThemeContext implementation
+    const newTheme = toggleTheme();
+
+    // Provide feedback based on the theme that was set
+    if (newTheme === 'system') {
+      const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      console.log(`Theme changed to system (currently ${systemIsDark ? 'dark' : 'light'} based on OS setting)`);
+    } else {
+      console.log(`Theme changed to ${newTheme}`);
+    }
+  } catch (error) {
+    console.error('Error toggling theme:', error);
+  }
 };
 
 export default {

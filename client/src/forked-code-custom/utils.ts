@@ -17,3 +17,52 @@ export const isMacOS = (): boolean => {
 export const getCmdKey = (): string => {
   return isMacOS() ? '⌘' : 'Ctrl';
 };
+
+// Add global type for window.lastThemeChange
+declare global {
+  interface Window {
+    lastThemeChange?: number;
+  }
+}
+
+/**
+ * Properly toggle between light, dark, and system themes using the same methods as the ThemeContext
+ * This implements the core theme switching logic matching the app's implementation
+ *
+ * @returns {string} The new theme value ('light', 'dark', or 'system')
+ */
+export const toggleTheme = (): string => {
+  // Read the current theme from localStorage
+  const storedTheme = localStorage.getItem('color-theme');
+
+  // Determine the next theme in the cycle: dark -> light -> system -> dark
+  let newTheme: string;
+
+  if (storedTheme === 'dark') {
+    newTheme = 'light';
+  } else if (storedTheme === 'light') {
+    newTheme = 'system';
+  } else {
+    // Either 'system' or null/undefined
+    newTheme = 'dark';
+  }
+
+  // Apply the theme (in the same way ThemeContext does)
+  const root = document.documentElement;
+  const isDarkMode = newTheme === 'dark' ||
+    (newTheme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+  root.classList.remove(isDarkMode ? 'light' : 'dark');
+  root.classList.add(isDarkMode ? 'dark' : 'light');
+
+  // Store the theme setting in localStorage
+  localStorage.setItem('color-theme', newTheme);
+
+  // If the app reacts to storage events, dispatch one
+  window.dispatchEvent(new Event('storage'));
+
+  // Track the last theme change time (used by the theme selector component)
+  window.lastThemeChange = Date.now();
+
+  return newTheme;
+};

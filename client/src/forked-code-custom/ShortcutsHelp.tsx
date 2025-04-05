@@ -80,6 +80,11 @@ const ShortcutsHelp = () => {
               description="Toggle sidebar"
             />
             <ShortcutItem
+              keys={['⌘', 'Shift', 'D']}
+              keysWin={['Ctrl', 'Shift', 'D']}
+              description="Cycle theme (dark/light/system)"
+            />
+            <ShortcutItem
               keys={['Esc']}
               description="Stop AI generation"
             />
