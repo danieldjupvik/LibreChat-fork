@@ -3,6 +3,7 @@ import ResponseCost from './ResponseCost';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
+import { PromptSuggestions } from './PromptSuggestions';
 
 /**
  * Exports for forked customizations
@@ -17,6 +18,7 @@ export {
   ForkedCustomizations,
   KeyboardShortcuts,
   initModelData,
+  PromptSuggestions,
 };
 
 export default {
