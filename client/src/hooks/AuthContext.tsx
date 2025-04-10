@@ -115,6 +115,7 @@ const AuthContextProvider = ({
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
+      localStorage.removeItem('subscription');
       logoutUser.mutate(undefined);
     },
     [logoutUser],

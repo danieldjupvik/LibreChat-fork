@@ -6,6 +6,7 @@ import ForkedCustomizations from './ForkedCustomizations';
 import { PromptSuggestions } from './PromptSuggestions';
 import { ModelBadges, useModelBadges } from './modelBadges';
 import { CapabilityIcons } from './CapabilityIcons';
+import RouteGuard from './RouteGuard';
 
 /**
  * Exports for forked customizations
@@ -24,6 +25,7 @@ export {
   ModelBadges,
   useModelBadges,
   CapabilityIcons,
+  RouteGuard,
 };
 
 export default {
