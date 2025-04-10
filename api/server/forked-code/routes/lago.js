@@ -3,6 +3,9 @@ const router = express.Router();
 const axios = require('axios');
 const { logger } = require('../../../config');
 
+// Get Lago API base URL from environment variables or use default
+const lagoBaseURL = process.env.LAGO_BASE_URL || 'https://lago.danieldjupvik.com';
+
 /**
  * Fetches all subscriptions from Lago API, handling pagination
  *
@@ -88,10 +91,11 @@ router.get('/subscription', async (req, res) => {
       });
     }
 
-    const lagoUrl = 'https://lago.danieldjupvik.com/api/v1/subscriptions';
+    // Construct the full Lago API endpoint URL
+    const subscriptionsEndpoint = `${lagoBaseURL}/api/v1/subscriptions`;
 
     // Fetch all subscriptions across all pages
-    const allSubscriptions = await fetchAllSubscriptions(apiKey, lagoUrl);
+    const allSubscriptions = await fetchAllSubscriptions(apiKey, subscriptionsEndpoint);
 
     // Find subscription for this user
     const userSubscription = allSubscriptions.find(
