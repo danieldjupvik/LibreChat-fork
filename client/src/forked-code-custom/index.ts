@@ -1,19 +1,24 @@
-import { initPricingData, useModelBadges, ModelBadges } from './modelBadges';
-export { default as PromptSuggestions } from './PromptSuggestions';
-export { CapabilityIcons } from './CapabilityIcons';
-export { useModelBadges, ModelBadges } from './modelBadges';
+import { initModelData } from './modelBadges';
+import ResponseCost from './ResponseCost';
+import KeyboardShortcuts from './KeyboardShortcuts';
+import ShortcutsHelp from './ShortcutsHelp';
+import ForkedCustomizations from './ForkedCustomizations';
 
 /**
- * Initialize forked custom features
- * - Loads pricing data on app startup to avoid delays on first model selection
+ * Exports for forked customizations
+ *
+ * The initialization is now handled by the ForkedCustomizations component
+ * which mounts in the React tree. This avoids duplicate initialization.
  */
-export const initialize = () => {
-  // Pre-fetch pricing data in the background
-  initPricingData().catch((err) => {
-    console.error('Failed to initialize pricing data:', err);
-  });
+
+export {
+  ResponseCost,
+  ShortcutsHelp,
+  ForkedCustomizations,
+  KeyboardShortcuts,
+  initModelData,
 };
 
 export default {
-  initialize,
+  ForkedCustomizations,
 };
