@@ -272,7 +272,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   return (
     <div
       className={cn(
-        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0',
+        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0 sm:min-w-[550px] h-[280px] sm:h-[100%]',
         isVisible ? 'opacity-100' : 'opacity-0',
       )}
       style={{ willChange: 'opacity' }} // Hint for better animation performance
