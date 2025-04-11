@@ -7,11 +7,11 @@ const { logger } = require('../../../config');
 const lagoBaseURL = process.env.LAGO_BASE_URL || 'https://lago.danieldjupvik.com';
 
 /**
- * Fetches all subscriptions from Lago API, handling pagination
+ * Fetches all subscriptions from Lago API, handling pagination.
  *
- * @param {string} apiKey - Lago API key
- * @param {string} baseUrl - Base URL for Lago API
- * @returns {Array} Combined array of all subscriptions across pages
+ * @param {string} apiKey - Lago API key.
+ * @param {string} baseUrl - Full endpoint URL for Lago subscriptions.
+ * @returns {Array} Combined array of subscriptions.
  */
 async function fetchAllSubscriptions(apiKey, baseUrl) {
   let allSubscriptions = [];
@@ -25,22 +25,24 @@ async function fetchAllSubscriptions(apiKey, baseUrl) {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
+        timeout: 5000, // Optional: timeout after 5 seconds
       });
 
       const { subscriptions = [], meta = {} } = response.data;
-
-      // Add subscriptions from this page
       allSubscriptions = [...allSubscriptions, ...subscriptions];
 
-      // Check if there are more pages
+      // If meta.total_pages or meta.has_more is provided by the API, you might check those as well.
       if (meta.next_page) {
         currentPage = meta.next_page;
       } else {
         hasMorePages = false;
       }
     } catch (error) {
-      // Log error but don't fail - return what we have so far
       logger.error(`Error fetching page ${currentPage} of subscriptions:`, error);
+      // If an error occurs on the first page or if nothing has been fetched, treat it as critical.
+      if (currentPage === 1 || allSubscriptions.length === 0) {
+        throw new Error('Error fetching subscriptions: API might be down.');
+      }
       hasMorePages = false;
     }
   }
@@ -49,13 +51,13 @@ async function fetchAllSubscriptions(apiKey, baseUrl) {
 }
 
 /**
- * Proxy endpoint to fetch subscription information from Lago
- * This keeps the API key secure on the server and avoids exposing it to clients
+ * Proxy endpoint to fetch subscription information from Lago.
+ * This keeps the API key secure on the server and avoids exposing it to clients.
  *
  * @route GET /api/forked/lago/subscription
- * @param {string} userId - The user ID to check subscription status for
- * @param {string} email - The user email to check whitelist for
- * @returns {object} Subscription information including status
+ * @param {string} userId - The user ID to check subscription status for.
+ * @param {string} email - The user email to check whitelist for.
+ * @returns {object} Subscription information including status.
  */
 router.get('/subscription', async (req, res) => {
   try {
@@ -66,7 +68,6 @@ router.get('/subscription', async (req, res) => {
     }
 
     const apiKey = process.env.LAGO_API_KEY;
-
     if (!apiKey) {
       logger.error('LAGO_API_KEY not found in environment variables');
       return res.status(500).json({ error: 'Lago API key not configured' });
@@ -82,8 +83,12 @@ router.get('/subscription', async (req, res) => {
       ? process.env.LAGO_WHITELISTED_USERS.split(',')
       : [];
 
-    // Check both whitelist types
-    if (email && whitelistedEmails.includes(email.toLowerCase()) || whitelistedUsers.includes(userId)) {
+    // If the email or user ID is whitelisted, grant subscription access
+    if (
+      email &&
+      (whitelistedEmails.includes(email.toLowerCase()) ||
+        whitelistedUsers.includes(userId))
+    ) {
       return res.json({
         hasSubscription: true,
         whitelisted: true,
@@ -91,19 +96,19 @@ router.get('/subscription', async (req, res) => {
       });
     }
 
-    // Construct the full Lago API endpoint URL
+    // Construct the full Lago API endpoint URL for subscriptions
     const subscriptionsEndpoint = `${lagoBaseURL}/api/v1/subscriptions`;
 
-    // Fetch all subscriptions across all pages
+    // Fetch all subscriptions across pages (this function may throw on errors)
     const allSubscriptions = await fetchAllSubscriptions(apiKey, subscriptionsEndpoint);
 
-    // Find subscription for this user
+    // Find the active subscription for this user
+    const normalizedUserId = userId.trim();
     const userSubscription = allSubscriptions.find(
-      sub => sub.external_id === userId && sub.status === 'active',
+      sub => sub.external_id.trim() === normalizedUserId && sub.status === 'active',
     );
 
-    // Cache header to reduce load on Lago service
-    // Cache for 5 minutes (300 seconds)
+    // Cache response for 5 minutes to reduce load on the Lago service
     res.setHeader('Cache-Control', 'public, max-age=300');
 
     return res.json({
@@ -113,42 +118,14 @@ router.get('/subscription', async (req, res) => {
     });
   } catch (error) {
     logger.error('Error fetching Lago subscription info:', error);
+    logger.warn('Denying access due to Lago API error');
 
-    // On error, default to allowing access
-    logger.warn('Defaulting to allow access due to Lago API error');
-
-    // Handle different types of errors
-    if (error.response) {
-      // The request was made and the server responded with a status code
-      // that falls out of the range of 2xx
-      logger.error(`Failed to fetch Lago subscription info: ${error.response.status} ${error.response.statusText}`);
-
-      // Return success with fallback access
-      return res.json({
-        hasSubscription: true,
-        error: true,
-        errorMessage: 'Error connecting to subscription service',
-        fallback: true,
-      });
-    } else if (error.request) {
-      // The request was made but no response was received
-      logger.error('No response received from Lago API');
-
-      // Return success with fallback access
-      return res.json({
-        hasSubscription: true,
-        error: true,
-        errorMessage: 'No response from subscription service',
-        fallback: true,
-      });
-    }
-
-    // Return success with fallback access
+    // Deny access when there is an error connecting to the subscription service
     return res.json({
-      hasSubscription: true,
+      hasSubscription: false,
       error: true,
-      errorMessage: error.message,
-      fallback: true,
+      errorMessage: 'Error connecting to subscription service',
+      fallback: false,
     });
   }
 });

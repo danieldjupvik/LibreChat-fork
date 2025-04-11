@@ -77,6 +77,7 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
   }, [user?.id, user?.email, performSubscriptionCheck]);
 
   useEffect(() => {
+    let isMounted = true;
     // Reset state on dependency changes
     setIsCheckComplete(false);
     setCheckStatus('pending');
@@ -94,11 +95,17 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
       // Remains pending until user data is available
     } else if (isAuthenticated && user?.id) {
       console.log('[RouteGuard] Authenticated with user ID. Checking subscription via API...');
-      performSubscriptionCheck(user.id, user.email);
+      performSubscriptionCheck(user.id, user.email).then(() => {
+        // Optionally, check if still mounted before proceeding
+        if (!isMounted) {
+          return null;
+        }
+      });
     }
+    return () => {
+      isMounted = false;
+    };
   }, [user?.id, user?.email, isAuthenticated, location.pathname, isPublicPath, performSubscriptionCheck]);
-
-  console.log(isCheckComplete, 'isCheckComplete');
 
   // Rendering logic: show nothing until auth and subscription check are complete
   if (isPublicPath) {

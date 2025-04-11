@@ -41,6 +41,9 @@ const TEXT = {
   },
 };
 
+// Minimum loading time in milliseconds to ensure users notice the loading state
+const MIN_LOADING_TIME = 1500;
+
 // Define the props type for the component
 type SubscriptionRequiredPageProps = {
   onLogout: () => void;
@@ -60,18 +63,46 @@ const SubscriptionRequiredPage = ({
   isLoading = false,
 }: SubscriptionRequiredPageProps) => {
   const [isVisible, setIsVisible] = useState(false);
+  const [isLocalLoading, setIsLocalLoading] = useState(false);
 
   useEffect(() => {
     // Show animation immediately without delay
     setIsVisible(true);
   }, []);
 
+  // Handle loading state with minimum duration
+  const handleRecheck = () => {
+    setIsLocalLoading(true);
+
+    // Call the actual recheck function
+    onRecheck();
+
+    // Set up a timer to ensure minimum loading time
+    setTimeout(() => {
+      setIsLocalLoading(false);
+    }, MIN_LOADING_TIME);
+  };
+
+  // Combined loading state (either from props or local state)
+  const combinedLoading = isLoading || isLocalLoading;
+
+  // Reset local loading state when props loading state changes to false
+  useEffect(() => {
+    if (!isLoading && isLocalLoading) {
+      const timerId = setTimeout(() => {
+        setIsLocalLoading(false);
+      }, MIN_LOADING_TIME);
+
+      return () => clearTimeout(timerId);
+    }
+  }, [isLoading, isLocalLoading]);
+
   if (error) {
     return (
       <ErrorView
         onLogout={onLogout}
-        onRecheck={onRecheck}
-        isLoading={isLoading}
+        onRecheck={handleRecheck}
+        isLoading={combinedLoading}
         isVisible={isVisible}
       />
     );
@@ -80,8 +111,8 @@ const SubscriptionRequiredPage = ({
   return (
     <SubscriptionView
       onLogout={onLogout}
-      onRecheck={onRecheck}
-      isLoading={isLoading}
+      onRecheck={handleRecheck}
+      isLoading={combinedLoading}
       isVisible={isVisible}
     />
   );
