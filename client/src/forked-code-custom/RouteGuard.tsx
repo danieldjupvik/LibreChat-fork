@@ -16,7 +16,7 @@ type RouteGuardProps = {
 const publicPaths = ['/login', '/register', '/login/2fa', '/forgot-password', '/reset-password', '/verify'];
 
 /**
- * RouteGuard combines authentication and subscription checks using an optimistic rendering approach.
+ * RouteGuard combines authentication and subscription checks using cache or API.
  * It renders children immediately for authenticated users and only shows the
  * subscription required page after a check explicitly denies access.
  */
@@ -99,17 +99,17 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
 
     if (isPublicPath) {
       immediateStatus = 'access-granted';
-      console.log('[RouteGuard Optimistic] Public path.');
+      console.log('[RouteGuard] Public path.');
     } else if (!isAuthenticated) {
       immediateStatus = 'access-granted'; // Assume access, let router redirect
-      console.log('[RouteGuard Optimistic] Unauthenticated.');
+      console.log('[RouteGuard] Unauthenticated.');
     } else if (isAuthenticated && !user?.id) {
       // Authenticated, but user details not ready yet. Stay pending.
       immediateStatus = 'pending';
-      console.log('[RouteGuard Optimistic] Authenticated but waiting for user ID.');
+      console.log('[RouteGuard] Authenticated but waiting for user ID.');
     } else if (isAuthenticated && user?.id) {
       // Authenticated and user details available - check cache
-      console.log('[RouteGuard Optimistic] Authenticated with user ID. Checking cache...');
+      console.log('[RouteGuard] Authenticated with user ID. Checking cache...');
       currentUserId = user.id;
       currentUserEmail = user.email;
       const cachedData = localStorage.getItem('subscription');
@@ -121,23 +121,23 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
             // Check cache validity based on stored data
             if (parsed.data.error) {
               // Treat cached error as needing API check unless configured otherwise
-              console.log('[RouteGuard Optimistic] Cache contains error. Needs API.');
+              console.log('[RouteGuard] Cache contains error. Needs API.');
               localStorage.removeItem('subscription');
               immediateStatus = 'pending';
               needsAsyncCheck = true;
             } else {
               const accessGranted = parsed.data.hasSubscription || parsed.data.whitelisted;
               immediateStatus = accessGranted ? 'access-granted' : 'subscription-required';
-              console.log(`[RouteGuard Optimistic] Cache determined status: ${immediateStatus}`);
+              console.log(`[RouteGuard] Cache determined status: ${immediateStatus}`);
             }
           } else {
-            console.log('[RouteGuard Optimistic] Cache stale/mismatched. Needs API.');
+            console.log('[RouteGuard] Cache stale/mismatched. Needs API.');
             localStorage.removeItem('subscription');
             immediateStatus = 'pending'; // Stay pending until API check
             needsAsyncCheck = true;
           }
         } catch (parseError) {
-          console.error('[RouteGuard Optimistic] Error parsing cache. Needs API.', parseError);
+          console.error('[RouteGuard] Error parsing cache. Needs API.', parseError);
           localStorage.removeItem('subscription');
           immediateStatus = 'pending'; // Stay pending until API check
           needsAsyncCheck = true;
@@ -166,29 +166,35 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
 
   }, [user?.id, user?.email, isAuthenticated, location.pathname, isPublicPath, performSubscriptionCheck]);
 
-  // --- Rendering Logic (Optimistic) ---
+  // --- Rendering Logic  ---
+  console.log(isCheckComplete, 'isCheckComplete');
 
-  // Always grant access for public paths or unauthenticated users (let router handle redirects)
-  if (isPublicPath || !isAuthenticated) {
+  // Always render children for public paths
+  if (isPublicPath) {
     return <>{children}</>;
   }
 
-  // Authenticated users:
-  if (!isCheckComplete) {
-    // If the check (cache or API) is not yet complete, render children optimistically
+  // If the auth state isn't fully resolved (either not authenticated or missing user details),
+  // or if the subscription check hasn't completed, don't render anything (or render a loader)
+  if (!isAuthenticated || !user?.id || !isCheckComplete) {
+    return null; // You could also render a spinner, e.g., <LoadingSpinner />
+  }
+
+  // Authenticated users, and the check is complete:
+  if (checkStatus === 'access-granted') {
     return <>{children}</>;
+  } else if (checkStatus === 'subscription-required' || checkStatus === 'error') {
+    return (
+      <SubscriptionRequiredPage
+        onLogout={() => logout('/login?redirect=false')}
+        error={checkStatus === 'error'}
+        onRecheck={handleRecheckSubscription}
+        isLoading={isRechecking}
+      />
+    );
   } else {
-    // Check is complete, render based on the final status
-    if (checkStatus === 'access-granted') {
-      return <>{children}</>;
-    } else if (checkStatus === 'subscription-required' || checkStatus === 'error') {
-      // Pass isRechecking state to the SubscriptionRequiredPage
-      return <SubscriptionRequiredPage onLogout={() => logout('/login?redirect=false')} error={checkStatus === 'error'} onRecheck={handleRecheckSubscription} isLoading={isRechecking} />;
-    } else {
-      // Should ideally not happen if status is pending and check is complete
-      console.error('[RouteGuard Render] Unexpected state: Check complete but status is pending.');
-      return null;
-    }
+    console.error('[RouteGuard Render] Unexpected state: Check complete but status is pending.');
+    return null;
   }
 };
 
