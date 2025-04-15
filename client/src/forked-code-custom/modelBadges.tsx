@@ -135,6 +135,20 @@ export const FreeBadge = memo(() => {
 });
 
 /**
+ * New badge component for new models
+ * Memoized to prevent unnecessary re-renders
+ */
+export const NewBadge = memo(() => {
+  const newText = 'NEW';
+
+  return (
+    <div className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300">
+      <span className="text-[10px] font-semibold text-color-heading">{newText}</span>
+    </div>
+  );
+});
+
+/**
  * Context window badge component for displaying max tokens
  * Memoized to prevent unnecessary re-renders
  */
@@ -211,7 +225,10 @@ export const ModelBadges = memo(({
   const shouldShowFree = isFree || isZeroPriced;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mt-1">
+    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 mt-1">
+      <NewBadge />
+      {/* <span className="text-[10px] font-semibold px-1.5 py-0.25 rounded-md text-color-heading bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300 group-hover:bg-sidebar/30 dark:group-hover:bg-[hsl(320,20%,4%)] group-hover:shadow-[0px_2px_6px_#ffae10a0,inset_0px_-2px_12px_#ffb525a0] dark:group-hover:shadow-[0px_2px_6px_rgba(186,130,21,0.45),inset_0px_-2px_12px_rgba(186,130,21,0.6)]">NEW</span> */}
+
       {shouldShowFree && (
         <FreeBadge />
       )}
