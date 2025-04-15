@@ -42,7 +42,7 @@ const TEXT = {
 };
 
 // Minimum loading time in milliseconds to ensure users notice the loading state
-const MIN_LOADING_TIME = 1500;
+const MIN_LOADING_TIME = 1000;
 
 // Define the props type for the component
 type SubscriptionRequiredPageProps = {
@@ -66,8 +66,15 @@ const SubscriptionRequiredPage = ({
   const [isLocalLoading, setIsLocalLoading] = useState(false);
 
   useEffect(() => {
-    // Show animation immediately without delay
-    setIsVisible(true);
+    // First set to false to ensure we start with hidden state
+    setIsVisible(false);
+
+    // Then set a small delay before showing to ensure animation triggers properly
+    const timer = setTimeout(() => {
+      setIsVisible(true);
+    }, 50); // Small delay to ensure the initial render is complete
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Handle loading state with minimum duration
@@ -97,24 +104,26 @@ const SubscriptionRequiredPage = ({
     }
   }, [isLoading, isLocalLoading]);
 
-  if (error) {
-    return (
-      <ErrorView
-        onLogout={onLogout}
-        onRecheck={handleRecheck}
-        isLoading={combinedLoading}
-        isVisible={isVisible}
-      />
-    );
-  }
-
-  return (
+  const content = error ? (
+    <ErrorView
+      onLogout={onLogout}
+      onRecheck={handleRecheck}
+      isLoading={combinedLoading}
+      isVisible={isVisible}
+    />
+  ) : (
     <SubscriptionView
       onLogout={onLogout}
       onRecheck={handleRecheck}
       isLoading={combinedLoading}
       isVisible={isVisible}
     />
+  );
+
+  return (
+    <div className="h-full flex items-center justify-center self-center">
+      {content}
+    </div>
   );
 };
 
@@ -131,27 +140,24 @@ const ErrorView = ({
 }) => {
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center backdrop-blur-sm transition-all duration-500 ease-in-out"
-      style={{
-        opacity: isVisible ? 1 : 0,
-      }}
+      id="error-card"
+      className={`flex flex-col justify-center w-full h-full sm:h-auto sm:max-w-lg rounded-none sm:rounded-lg bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 border border-border-light p-6 md:p-10 shadow-lg sm:mx-4 transition-all duration-700 ease-out transform ${
+        isVisible
+          ? 'opacity-100 translate-y-0 scale-100'
+          : 'opacity-0 translate-y-8 scale-95'
+      }`}
+      style={{ willChange: 'opacity, transform' }}
     >
-      <div
-        className="flex flex-col justify-center w-full max-w-md rounded-lg bg-surface-primary-alt border border-border-light p-8 shadow-lg transform transition-all duration-400 ease-out"
-        style={{
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(30px) scale(0.95)',
-        }}
-      >
-        <div className="mx-auto mb-6 flex items-center justify-center">
+      <div className="flex flex-col max-w-5xl mx-auto w-full">
+        <div className="mx-auto mb-6 md:mb-8 flex items-center justify-center">
           <div className="rounded-full bg-surface-destructive/20 p-3">
-            <AlertCircle className="h-8 w-8 text-surface-destructive" />
+            <AlertCircle size={32} className="text-surface-destructive" />
           </div>
         </div>
 
-        <h2 className="mb-4 text-center text-2xl font-bold text-text-primary">{TEXT.errorTitle}</h2>
+        <h2 className="mb-4 md:mb-6 text-center text-2xl font-bold text-text-primary">{TEXT.errorTitle}</h2>
 
-        <p className="mb-8 text-center text-text-secondary">
+        <p className="mb-8 md:mb-10 text-center text-text-secondary">
           {TEXT.errorMessage}
         </p>
 
@@ -165,9 +171,9 @@ const ErrorView = ({
             aria-disabled={isLoading}
           >
             {isLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <Loader2 size={16} className="mr-3 animate-spin" />
             ) : (
-              <RefreshCw className="mr-2 h-4 w-4" />
+              <RefreshCw size={16} className="mr-3" />
             )}
             {TEXT.tryAgain}
           </button>
@@ -183,10 +189,15 @@ const ErrorView = ({
           </button>
         </div>
 
-        <div className="mt-6 text-center">
-          <p className="text-xs text-text-tertiary">
-            {TEXT.needHelp} <a href={`mailto:${TEXT.supportEmailHref}`} className="text-[#3bd5b0] hover:underline">{TEXT.supportEmail}</a>
-          </p>
+        <div className="mt-6 md:mt-8">
+          <div className="rounded-lg p-4 md:p-6 border border-border-light bg-surface-tertiary">
+            <div className="flex items-center gap-3">
+              <ShieldCheck size={25} className="text-[#3bd5b0] flex-shrink-0" />
+              <p className="text-sm text-text-secondary">
+                {TEXT.stripeInfo}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -227,56 +238,66 @@ const SubscriptionView = ({
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center backdrop-blur-sm transition-all duration-500 ease-in-out"
-      style={{
-        opacity: isVisible ? 1 : 0,
-      }}
+      id="subscription-card"
+      className={`flex flex-col justify-center w-full h-full sm:h-auto sm:max-w-3xl md:max-w-4xl rounded-none sm:rounded-lg bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 border border-border-light p-6 md:p-10 shadow-lg sm:mx-4 transition-all duration-700 ease-out transform ${
+        isVisible
+          ? 'opacity-100 translate-y-0 scale-100'
+          : 'opacity-0 translate-y-8 scale-95'
+      }`}
+      style={{ willChange: 'opacity, transform' }}
     >
-      <div
-        className="flex flex-col justify-center w-full h-full sm:h-auto sm:max-w-3xl rounded-none sm:rounded-lg bg-surface-primary-alt border border-border-light p-8 shadow-lg transform transition-all duration-400 ease-out sm:mx-4"
-        style={{
-          opacity: isVisible ? 1 : 0,
-          transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(30px) scale(0.95)',
-        }}
-      >
-        <div className="flex flex-col md:flex-row gap-6 max-w-5xl mx-auto w-full">
-          {/* Left column - Information */}
-          <div className="flex-1">
-            <div className="mb-5 flex items-center space-x-2">
-              <div className="rounded-full bg-[#3bd5b0]/20 p-2">
-                <Sparkles className="h-6 w-6 text-[#3bd5b0]" />
-              </div>
-              <h2 className="text-2xl font-bold text-text-primary">{TEXT.unlockAccess}</h2>
+      <div className="flex flex-col md:flex-row max-w-5xl mx-auto w-full">
+        {/* Left column - Information */}
+        <div className="flex flex-col flex-1 md:pr-10">
+          <div className="mb-6 md:mb-8 flex items-center space-x-2">
+            <div className="rounded-full bg-[#3bd5b0]/20 p-2">
+              <Sparkles className="h-6 w-6 text-[#3bd5b0]" />
             </div>
+            <h2 className="text-2xl font-bold text-text-primary">{TEXT.unlockAccess}</h2>
+          </div>
 
-            <p className="text-text-secondary mb-6">
-              {TEXT.subscriptionInfo}
-            </p>
+          <p className="text-text-secondary mb-8 md:mb-10">
+            {TEXT.subscriptionInfo}
+          </p>
 
-            <div className="space-y-5 mb-6">
-              {features.map((feature, index) => (
-                <div key={index} className="flex items-start">
-                  <div className="mt-1 mr-3 flex-shrink-0">
-                    {feature.icon}
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-text-primary">{feature.title}</h3>
-                    <p className="text-sm text-text-secondary">{feature.description}</p>
-                  </div>
+          <div className="space-y-6 md:space-y-8 mb-8 md:mb-10">
+            {features.map((feature, index) => (
+              <div
+                key={index}
+                className={`flex items-start transition-all duration-700 ease-out transform ${
+                  isVisible
+                    ? 'opacity-100 translate-x-0'
+                    : 'opacity-0 translate-x-8'
+                }`}
+                style={{
+                  transitionDelay: `${300 + index * 150}ms`,
+                  willChange: 'opacity, transform',
+                }}
+              >
+                <div className="mt-1 mr-3 flex-shrink-0">
+                  {feature.icon}
                 </div>
-              ))}
-            </div>
-
-            <div className="rounded-lg p-4 border border-border-light bg-surface-tertiary mb-6">
-              <p className="text-sm text-text-secondary">
-                {TEXT.stripeInfo}
-              </p>
-            </div>
+                <div>
+                  <h3 className="font-medium text-text-primary">{feature.title}</h3>
+                  <p className="text-sm text-text-secondary">{feature.description}</p>
+                </div>
+              </div>
+            ))}
           </div>
 
           {/* Right column - Actions */}
-          <div className="md:w-72 flex flex-col">
-            <div className="bg-surface-chat p-5 rounded-lg mb-4 border border-border-light">
+          <div className="md:hidden flex flex-col mb-6">
+            <div
+              className={`bg-surface-chat p-5 rounded-lg mb-4 border border-border-light transition-all duration-700 ease-out transform ${
+                isVisible
+                  ? 'opacity-100 translate-y-0 scale-100'
+                  : 'opacity-0 translate-y-8 scale-95'
+              }`}
+              style={{
+                transitionDelay: '500ms',
+                willChange: 'opacity, transform',
+              }}
+            >
               <h3 className="font-medium text-text-primary mb-2">{TEXT.accessStatus}</h3>
               <p className="text-sm text-text-secondary mb-6">
                 {TEXT.statusInfo}
@@ -291,9 +312,9 @@ const SubscriptionView = ({
                 aria-disabled={isLoading}
               >
                 {isLoading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-3 h-4 w-4 animate-spin" />
                 ) : (
-                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <RefreshCw className="mr-3 h-4 w-4" />
                 )}
                 {TEXT.verifyStatus}
               </button>
@@ -308,12 +329,71 @@ const SubscriptionView = ({
                 {TEXT.logout}
               </button>
             </div>
+          </div>
 
-            <div className="text-center">
-              <p className="text-xs text-text-tertiary">
-                {TEXT.needHelp} <a href={`mailto:${TEXT.supportEmailHref}`} className="text-[#3bd5b0] hover:underline">{TEXT.supportEmail}</a>
+          <div
+            className={`rounded-lg p-4 md:p-6 border border-border-light bg-surface-tertiary md:mb-0 transition-all duration-700 ease-out transform ${
+              isVisible
+                ? 'opacity-100 translate-y-0'
+                : 'opacity-0 translate-y-8'
+            }`}
+            style={{
+              transitionDelay: '600ms',
+              willChange: 'opacity, transform',
+            }}
+          >
+            <div className="flex items-center gap-3">
+              <ShieldCheck size={25} className="text-[#3bd5b0] flex-shrink-0" />
+              <p className="text-sm text-text-secondary">
+                {TEXT.stripeInfo}
               </p>
             </div>
+          </div>
+        </div>
+
+        {/* Desktop Actions Column */}
+        <div className="hidden md:flex md:w-80 flex-col md:pl-10 md:border-l border-border-light">
+          <div
+            className={`bg-surface-chat p-5 rounded-lg mb-4 border border-border-light transition-all duration-700 ease-out transform ${
+              isVisible
+                ? 'opacity-100 translate-y-0 scale-100'
+                : 'opacity-0 translate-y-8 scale-95'
+            }`}
+            style={{
+              transitionDelay: '500ms',
+              willChange: 'opacity, transform',
+            }}
+          >
+            <h3 className="font-medium text-text-primary mb-2">{TEXT.accessStatus}</h3>
+            <p className="text-sm text-text-secondary mb-6">
+              {TEXT.statusInfo}
+            </p>
+
+            <button
+              type="button"
+              onClick={onRecheck}
+              disabled={isLoading}
+              className="w-full inline-flex items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200 mb-3"
+              aria-label="Recheck subscription status"
+              aria-disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="mr-3 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-3 h-4 w-4" />
+              )}
+              {TEXT.verifyStatus}
+            </button>
+
+            <button
+              onClick={onLogout}
+              className="w-full inline-flex items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-all duration-200"
+              tabIndex={0}
+              aria-label="Logout"
+              onKeyDown={(e) => e.key === 'Enter' && onLogout()}
+            >
+              {TEXT.logout}
+            </button>
           </div>
         </div>
       </div>
