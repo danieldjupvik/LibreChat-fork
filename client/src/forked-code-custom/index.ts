@@ -1,6 +1,6 @@
 import { initLiteLLMModelData, useModelPricingInfo } from './litellmInfoAdapter';
 import ResponseCost from './ResponseCost';
-import KeyboardShortcuts from './KeyboardShortcuts';
+import { initialize, cleanup } from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
 import { PromptSuggestions } from './PromptSuggestions';
@@ -18,7 +18,8 @@ export {
   ResponseCost,
   ShortcutsHelp,
   ForkedCustomizations,
-  KeyboardShortcuts,
+  initialize,
+  cleanup,
   initLiteLLMModelData,
   PromptSuggestions,
   ModelBadges,

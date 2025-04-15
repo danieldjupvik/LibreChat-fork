@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { initLiteLLMModelData } from './litellmInfoAdapter';
 import { initOpenRouterData } from './openRouterAdapter';
 import ShortcutsHelp from './ShortcutsHelp';
-import KeyboardShortcuts from './KeyboardShortcuts';
+import { initialize, cleanup } from './KeyboardShortcuts';
 
 /**
  * ForkedCustomizations component
@@ -35,11 +35,11 @@ const ForkedCustomizations: React.FC = () => {
     });
 
     // Initialize keyboard shortcuts
-    KeyboardShortcuts.initialize();
+    initialize();
 
     // Cleanup on unmount
     return () => {
-      KeyboardShortcuts.cleanup();
+      cleanup();
     };
   }, []);
 

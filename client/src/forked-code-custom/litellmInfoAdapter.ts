@@ -274,9 +274,3 @@ export const useModelPricingInfo = (spec: TModelSpec): ModelPricingInfo => {
   // Memoize the returned object to prevent unnecessary re-renders
   return useMemo(() => pricingInfo, [pricingInfo]);
 };
-
-export default {
-  fetchLiteLLMModelInfo,
-  initLiteLLMModelData,
-  useModelPricingInfo,
-};

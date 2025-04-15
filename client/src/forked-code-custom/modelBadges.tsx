@@ -1,9 +1,9 @@
-import { useEffect, useState, memo, useMemo } from 'react';
+import { memo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { User, Server, Gift, Target } from 'lucide-react';
 import { TooltipAnchor } from '../components/ui/Tooltip';
-import { LiteLLMModelInfo, useModelPricingInfo, ModelPricingInfo } from './litellmInfoAdapter';
+import { useModelPricingInfo } from './litellmInfoAdapter';
 import { useNewModelCheck } from './openRouterAdapter';
 
 /**

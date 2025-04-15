@@ -244,8 +244,3 @@ export const initOpenRouterData = async (): Promise<Record<string, OpenRouterMod
   }
   return openRouterDataPromise;
 };
-
-export default {
-  useNewModelCheck,
-  initOpenRouterData,
-};
