@@ -253,7 +253,7 @@ const SubscriptionView = ({
             <div className="rounded-full bg-[#3bd5b0]/20 p-2">
               <Sparkles className="h-6 w-6 text-[#3bd5b0]" />
             </div>
-            <h2 className="text-2xl font-bold text-text-primary">{TEXT.unlockAccess}</h2>
+            <h2 className="text-2xl font-bold text-text-primary" style={{ marginLeft: '0.75rem' }}>{TEXT.unlockAccess}</h2>
           </div>
 
           <p className="text-text-secondary mb-8 md:mb-10">
