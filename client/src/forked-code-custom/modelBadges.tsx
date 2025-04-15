@@ -4,6 +4,7 @@ import type { TModelSpec } from 'librechat-data-provider';
 import { User, Server, Gift, Target } from 'lucide-react';
 import { TooltipAnchor } from '../components/ui/Tooltip';
 import { fetchModelInfo, LiteLLMModelInfo } from './litellmInfoAdapter';
+import { useNewModelCheck } from './openRouterAdapter';
 
 /**
  * Pricing data cache from LiteLLM
@@ -138,13 +139,44 @@ export const FreeBadge = memo(() => {
  * New badge component for new models
  * Memoized to prevent unnecessary re-renders
  */
-export const NewBadge = memo(() => {
+export const NewBadge = memo(({
+  createdAt,
+}: {
+  createdAt?: number | null;
+}) => {
   const newText = 'NEW';
 
+  // Generate tooltip text with creation date if available
+  let tooltipText = 'Recently added model';
+
+  if (createdAt) {
+    // Convert Unix timestamp to Date object (multiply by 1000 as OpenRouter uses seconds)
+    const creationDate = new Date(createdAt * 1000);
+
+    // Format date to local string
+    const formattedDate = creationDate.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+
+    // Calculate days since creation
+    const daysSince = Math.floor((Date.now() - creationDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    // Create tooltip text
+    tooltipText = `Released ${daysSince} ${daysSince === 1 ? 'day' : 'days'} ago on ${formattedDate}`;
+  }
+
   return (
-    <div className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300">
-      <span className="text-[10px] font-semibold text-color-heading">{newText}</span>
-    </div>
+    <TooltipAnchor
+      description={tooltipText}
+      side="top"
+      className="cursor-pointer"
+    >
+      <div className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300">
+        <span className="text-[10px] font-semibold text-color-heading">{newText}</span>
+      </div>
+    </TooltipAnchor>
   );
 });
 
@@ -201,6 +233,13 @@ export const ModelBadges = memo(({
 }) => {
   // Always call the hook, never conditionally
   const hookData = useModelBadges(spec ?? {} as TModelSpec);
+  const modelName = spec?.preset?.model || '';
+
+  // Get provider information from the model's endpoint
+  const endpoint = spec?.preset?.endpoint || '';
+
+  // Check if model is new using OpenRouter data
+  const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
 
   // Use passed props if available, otherwise use hook data
   const inputPrice = passedInputPrice ?? hookData?.inputPrice ?? null;
@@ -226,7 +265,7 @@ export const ModelBadges = memo(({
 
   return (
     <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 mt-1">
-      <NewBadge />
+      {isNew && <NewBadge createdAt={createdAt} />}
       {/* <span className="text-[10px] font-semibold px-1.5 py-0.25 rounded-md text-color-heading bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300 group-hover:bg-sidebar/30 dark:group-hover:bg-[hsl(320,20%,4%)] group-hover:shadow-[0px_2px_6px_#ffae10a0,inset_0px_-2px_12px_#ffb525a0] dark:group-hover:shadow-[0px_2px_6px_rgba(186,130,21,0.45),inset_0px_-2px_12px_rgba(186,130,21,0.6)]">NEW</span> */}
 
       {shouldShowFree && (

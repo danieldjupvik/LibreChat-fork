@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { initModelData } from './modelBadges';
+import { initOpenRouterData } from './openRouterAdapter';
 import ShortcutsHelp from './ShortcutsHelp';
 import KeyboardShortcuts from './KeyboardShortcuts';
 
@@ -21,9 +22,16 @@ import KeyboardShortcuts from './KeyboardShortcuts';
  */
 const ForkedCustomizations: React.FC = () => {
   useEffect(() => {
-    // Initialize model data
+    // Initialize model data from LiteLLM
     initModelData().catch(err => {
-      console.error('Failed to initialize model data:', err);
+      console.error('Failed to initialize LiteLLM model data:', err);
+    });
+
+    // Initialize model data from OpenRouter
+    initOpenRouterData().catch(err => {
+      // Just log silently without showing errors to users
+      console.warn('Failed to initialize OpenRouter model data:', err);
+      // We already handle this gracefully in the adapter, so no need for additional error handling
     });
 
     // Initialize keyboard shortcuts
