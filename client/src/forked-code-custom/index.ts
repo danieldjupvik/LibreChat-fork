@@ -1,10 +1,10 @@
-import { initModelData } from './modelBadges';
+import { initLiteLLMModelData, useModelPricingInfo } from './litellmInfoAdapter';
 import ResponseCost from './ResponseCost';
 import KeyboardShortcuts from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
 import { PromptSuggestions } from './PromptSuggestions';
-import { ModelBadges, useModelBadges } from './modelBadges';
+import { ModelBadges } from './modelBadges';
 import { CapabilityIcons } from './CapabilityIcons';
 
 /**
@@ -19,10 +19,10 @@ export {
   ShortcutsHelp,
   ForkedCustomizations,
   KeyboardShortcuts,
-  initModelData,
+  initLiteLLMModelData,
   PromptSuggestions,
   ModelBadges,
-  useModelBadges,
+  useModelPricingInfo,
   CapabilityIcons,
 };
 

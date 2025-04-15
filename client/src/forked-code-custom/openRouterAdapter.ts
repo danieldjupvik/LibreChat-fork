@@ -246,8 +246,6 @@ export const initOpenRouterData = async (): Promise<Record<string, OpenRouterMod
 };
 
 export default {
-  fetchOpenRouterModels,
   useNewModelCheck,
-  normalizeModelName,
   initOpenRouterData,
 };

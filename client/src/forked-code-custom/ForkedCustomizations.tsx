@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { initModelData } from './modelBadges';
+import { initLiteLLMModelData } from './litellmInfoAdapter';
 import { initOpenRouterData } from './openRouterAdapter';
 import ShortcutsHelp from './ShortcutsHelp';
 import KeyboardShortcuts from './KeyboardShortcuts';
@@ -23,7 +23,7 @@ import KeyboardShortcuts from './KeyboardShortcuts';
 const ForkedCustomizations: React.FC = () => {
   useEffect(() => {
     // Initialize model data from LiteLLM
-    initModelData().catch(err => {
+    initLiteLLMModelData().catch(err => {
       console.error('Failed to initialize LiteLLM model data:', err);
     });
 
