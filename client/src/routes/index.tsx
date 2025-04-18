@@ -17,10 +17,13 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import { RouteGuard } from '~/forked-code-custom';
 
 const AuthLayout = () => (
   <AuthContextProvider>
-    <Outlet />
+    <RouteGuard>
+      <Outlet />
+    </RouteGuard>
     <ApiErrorWatcher />
   </AuthContextProvider>
 );
