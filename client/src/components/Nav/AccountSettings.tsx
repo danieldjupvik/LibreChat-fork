@@ -1,7 +1,7 @@
 import { useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
-import { FileText, LogOut } from 'lucide-react';
+import { FileText, LogOut, User } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
@@ -110,6 +110,14 @@ function AccountSettings() {
         >
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
+        </Select.SelectItem>
+        <Select.SelectItem
+          value=""
+          onClick={() => window.open(`https://profile.danieldjupvik.com/?email=${user?.email}`, '_blank')}
+          className="select-item text-sm"
+        >
+          <User className="icon-md" />
+          {'Profile'}
         </Select.SelectItem>
         <DropdownMenuSeparator />
         <Select.SelectItem
