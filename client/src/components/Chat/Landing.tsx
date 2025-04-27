@@ -10,7 +10,7 @@ import { getIconEndpoint, getEntity } from '~/utils';
 import { PromptSuggestions } from '~/forked-code-custom';
 
 const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white text-black';
+  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
 
 function getTextSizeClass(text: string | undefined | null) {
   if (!text) {
@@ -157,7 +157,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     >
       <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
         <div
-          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-4`}
+          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
         >
           <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <ConvoIcon
@@ -167,7 +167,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               endpointsConfig={endpointsConfig}
               containerClassName={containerClassName}
               context="landing"
-              className="h-2/3 w-2/3"
+              className="h-2/3 w-2/3 text-black dark:text-white"
               size={41}
             />
             {startupConfig?.showBirthdayIcon && (
