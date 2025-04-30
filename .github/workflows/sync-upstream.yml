@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WORKFLOW_TOKEN }}
           fetch-depth: 0
 
       - name: Configure Git
@@ -59,9 +59,9 @@ jobs:
 
       - name: Trigger Build Workflow
         if: steps.merge.outputs.changes_merged == 'true'
-        uses: peter-evans/repository-dispatch@v2
+        uses: peter-evans/repository-dispatch@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.WORKFLOW_TOKEN }}
           event-type: upstream-changes-merged
 
       - name: Create PR for conflicted changes
@@ -72,4 +72,4 @@ jobs:
           git push origin upstream-sync-$(date +%Y%m%d)
           gh pr create --title "Upstream Sync (Conflicts to Resolve)" --body "This PR contains upstream changes that resulted in conflicts. Please resolve manually." --base main --head upstream-sync-$(date +%Y%m%d)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
