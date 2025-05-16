@@ -25,9 +25,12 @@ const { initForkedCode } = require('./forked-code');
 
 const { PORT, HOST, ALLOW_SOCIAL_LOGIN, DISABLE_COMPRESSION, TRUST_PROXY } = process.env ?? {};
 
-const port = Number(PORT) || 3080;
+// Allow PORT=0 to be used for automatic free port assignment
+const port = isNaN(Number(PORT)) ? 3080 : Number(PORT);
 const host = HOST || 'localhost';
 const trusted_proxy = Number(TRUST_PROXY) || 1; /* trust first proxy by default */
+
+const app = express();
 
 const startServer = async () => {
   if (typeof Bun !== 'undefined') {
@@ -37,7 +40,6 @@ const startServer = async () => {
   logger.info('Connected to MongoDB');
   await indexSync();
 
-  const app = express();
   app.disable('x-powered-by');
   app.set('trust proxy', trusted_proxy);
 
@@ -183,3 +185,6 @@ process.on('uncaughtException', (err) => {
 
   process.exit(1);
 });
+
+// export app for easier testing purposes
+module.exports = app;
