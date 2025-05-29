@@ -2,7 +2,6 @@ import path from 'path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { visualizer } from 'rollup-plugin-visualizer';
 import { compression } from 'vite-plugin-compression2';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
 import type { Plugin } from 'vite';
@@ -49,7 +48,7 @@ export default defineConfig(({ command }) => ({
         ],
         globIgnores: ['images/**/*', '**/*.map'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        navigateFallbackDenylist: [/^\/oauth/],
+        navigateFallbackDenylist: [/^\/oauth/, /^\/api/],
       },
       includeAssets: [],
       manifest: {
@@ -93,15 +92,7 @@ export default defineConfig(({ command }) => ({
     compression({
       threshold: 10240,
     }),
-    process.env.VITE_BUNDLE_ANALYSIS === 'true' &&
-      visualizer({
-        filename: 'dist/bundle-analysis.html',
-        open: true,
-        gzipSize: true,
-        brotliSize: true,
-        template: 'treemap', // 'treemap' | 'sunburst' | 'network'
-      }),
-  ].filter(Boolean),
+  ],
   publicDir: command === 'serve' ? './public' : false,
   build: {
     sourcemap: process.env.NODE_ENV === 'development',
