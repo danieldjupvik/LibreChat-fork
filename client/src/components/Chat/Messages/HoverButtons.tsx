@@ -26,6 +26,7 @@ type THoverButtons = {
 };
 
 type HoverButtonProps = {
+  id?: string;
   onClick: (e?: React.MouseEvent<HTMLButtonElement>) => void;
   title: string;
   icon: React.ReactNode;
@@ -68,6 +69,7 @@ const extractMessageContent = (message: TMessage): string => {
 
 const HoverButton = memo(
   ({
+    id,
     onClick,
     title,
     icon,
@@ -90,6 +92,7 @@ const HoverButton = memo(
 
     return (
       <button
+        id={id}
         className={buttonStyle}
         onClick={onClick}
         type="button"
@@ -214,6 +217,7 @@ const HoverButtons = ({
       {/* Edit Button */}
       {isEditableEndpoint && (
         <HoverButton
+          id={`edit-${message.messageId}`}
           onClick={onEdit}
           title={localize('com_ui_edit')}
           icon={<EditIcon size="19" />}
