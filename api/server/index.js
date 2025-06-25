@@ -98,7 +98,6 @@ const startServer = async () => {
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/user', routes.user);
-  app.use('/api/ask', routes.ask);
   app.use('/api/search', routes.search);
   app.use('/api/edit', routes.edit);
   app.use('/api/messages', routes.messages);
@@ -119,7 +118,6 @@ const startServer = async () => {
   app.use('/api/roles', routes.roles);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
-  app.use('/api/bedrock', routes.bedrock);
   app.use('/api/memories', routes.memories);
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
