@@ -56,7 +56,6 @@ const startServer = async () => {
 
   /* Middleware */
   app.use(noIndex);
-  app.use(errorController);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(mongoSanitize());
@@ -124,6 +123,9 @@ const startServer = async () => {
 
   // Initialize forked code routes and extensions
   initForkedCode(app);
+
+  // Add the error controller one more time after all routes
+  app.use(errorController);
 
   app.use((req, res) => {
     res.set({
