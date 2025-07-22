@@ -15,6 +15,7 @@ const {
   Callback,
   Providers,
   GraphEvents,
+  TitleMethod,
   formatMessage,
   formatAgentMessages,
   getTokenCountForMessage,
@@ -70,7 +71,11 @@ const payloadParser = ({ req, agent, endpoint }) => {
   if (isAgentsEndpoint(endpoint)) {
     return { model: undefined };
   } else if (endpoint === EModelEndpoint.bedrock) {
-    return bedrockInputSchema.parse(agent.model_parameters);
+    const parsedValues = bedrockInputSchema.parse(agent.model_parameters);
+    if (parsedValues.thinking == null) {
+      parsedValues.thinking = false;
+    }
+    return parsedValues;
   }
   return req.body.endpointOption.model_parameters;
 };
@@ -1009,7 +1014,7 @@ class AgentClient extends BaseClient {
     }
     const { handleLLMEnd, collected: collectedMetadata } = createMetadataAggregator();
     const { req, res, agent } = this.options;
-    const endpoint = agent.endpoint;
+    let endpoint = agent.endpoint;
 
     /** @type {import('@librechat/agents').ClientOptions} */
     let clientOptions = {
@@ -1017,15 +1022,30 @@ class AgentClient extends BaseClient {
       model: agent.model_parameters.model,
     };
 
-    const { getOptions, overrideProvider, customEndpointConfig } =
-      await getProviderConfig(endpoint);
+    let titleProviderConfig = await getProviderConfig(endpoint);
 
     /** @type {TEndpoint | undefined} */
-    const endpointConfig = req.app.locals[endpoint] ?? customEndpointConfig;
+    const endpointConfig =
+      req.app.locals.all ?? req.app.locals[endpoint] ?? titleProviderConfig.customEndpointConfig;
     if (!endpointConfig) {
       logger.warn(
         '[api/server/controllers/agents/client.js #titleConvo] Error getting endpoint config',
       );
+    }
+
+    if (endpointConfig?.titleEndpoint && endpointConfig.titleEndpoint !== endpoint) {
+      try {
+        titleProviderConfig = await getProviderConfig(endpointConfig.titleEndpoint);
+        endpoint = endpointConfig.titleEndpoint;
+      } catch (error) {
+        logger.warn(
+          `[api/server/controllers/agents/client.js #titleConvo] Error getting title endpoint config for ${endpointConfig.titleEndpoint}, falling back to default`,
+          error,
+        );
+        // Fall back to original provider config
+        endpoint = agent.endpoint;
+        titleProviderConfig = await getProviderConfig(endpoint);
+      }
     }
 
     if (
@@ -1036,7 +1056,7 @@ class AgentClient extends BaseClient {
       clientOptions.model = endpointConfig.titleModel;
     }
 
-    const options = await getOptions({
+    const options = await titleProviderConfig.getOptions({
       req,
       res,
       optionsOnly: true,
@@ -1045,7 +1065,7 @@ class AgentClient extends BaseClient {
       endpointOption: { model_parameters: clientOptions },
     });
 
-    let provider = options.provider ?? overrideProvider ?? agent.provider;
+    let provider = options.provider ?? titleProviderConfig.overrideProvider ?? agent.provider;
     if (
       endpoint === EModelEndpoint.azureOpenAI &&
       options.llmConfig?.azureOpenAIApiInstanceName == null
@@ -1078,21 +1098,27 @@ class AgentClient extends BaseClient {
       ),
     );
 
-    if (provider === Providers.GOOGLE) {
+    if (
+      provider === Providers.GOOGLE &&
+      (endpointConfig?.titleMethod === TitleMethod.FUNCTIONS ||
+        endpointConfig?.titleMethod === TitleMethod.STRUCTURED)
+    ) {
       clientOptions.json = true;
     }
 
     try {
       // Custom title prompt that includes the emoji instruction
-      const customTitlePrompt = `Write a concise title for this conversation in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject.
-{convo}`;
+      //       const customTitlePrompt = `Write a concise title for this conversation in the detected language. Title in 5 Words or Less. No Punctuation or Quotation. Start the title with one emoji that fits the topic (REQUIRED), The emoji should help communicate the subject.
+      // {convo}`;
 
       const titleResult = await this.run.generateTitle({
         provider,
+        clientOptions,
         inputText: text,
         contentParts: this.contentParts,
-        clientOptions,
-        titlePrompt: customTitlePrompt, // Pass the custom prompt
+        titleMethod: endpointConfig?.titleMethod,
+        titlePrompt: endpointConfig?.titlePrompt,
+        titlePromptTemplate: endpointConfig?.titlePromptTemplate,
         chainOptions: {
           signal: abortController.signal,
           callbacks: [
