@@ -2,12 +2,11 @@ import { useState, memo } from 'react';
 import { useRecoilState } from 'recoil';
 import * as Select from '@ariakit/react/select';
 import { FileText, LogOut, User } from 'lucide-react';
-import { LinkIcon, GearIcon, DropdownMenuSeparator } from '~/components';
+import { LinkIcon, GearIcon, DropdownMenuSeparator, UserIcon } from '@librechat/client';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import FilesView from '~/components/Chat/Input/Files/FilesView';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useAvatar from '~/hooks/Messages/useAvatar';
-import { UserIcon } from '~/components/svg';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -112,7 +111,9 @@ function AccountSettings() {
         </Select.SelectItem>
         <Select.SelectItem
           value=""
-          onClick={() => window.open(`https://profile.danieldjupvik.com/?email=${user?.email}`, '_blank')}
+          onClick={() =>
+            window.open(`https://profile.danieldjupvik.com/?email=${user?.email}`, '_blank')
+          }
           className="select-item text-sm"
         >
           <User className="icon-md" />
