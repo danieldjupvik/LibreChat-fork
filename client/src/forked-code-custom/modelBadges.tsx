@@ -2,7 +2,7 @@ import { memo } from 'react';
 import React from 'react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { User, Server, Gift, Target } from 'lucide-react';
-import { TooltipAnchor } from '../components/ui/Tooltip';
+import { TooltipAnchor } from '@librechat/client';
 import { useModelPricingInfo } from './litellmInfoAdapter';
 import { useNewModelCheck } from './openRouterAdapter';
 
@@ -22,13 +22,7 @@ const formatTokenCount = (count: number): string => {
  * Price badge component for displaying input and output prices
  * Memoized to prevent unnecessary re-renders
  */
-const PriceBadge = memo(({
-  type,
-  price,
-}: {
-  type: 'input' | 'output';
-  price: number;
-}) => {
+const PriceBadge = memo(({ type, price }: { type: 'input' | 'output'; price: number }) => {
   const isInput = type === 'input';
 
   // Display the price value directly without further conversion
@@ -40,13 +34,9 @@ const PriceBadge = memo(({
   const priceText = `$${formattedPrice}/1M`;
 
   return (
-    <TooltipAnchor
-      description={tooltipText}
-      side="top"
-      className="cursor-pointer"
-    >
+    <TooltipAnchor description={tooltipText} side="top" className="cursor-pointer">
       <div
-        className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        className="flex items-center justify-center gap-1 rounded-full border border-border-medium bg-surface-chat px-2 py-0.5"
         style={{ minWidth: '76px' }}
       >
         {isInput ? (
@@ -54,9 +44,7 @@ const PriceBadge = memo(({
         ) : (
           <Server size={12} className="text-text-primary" strokeWidth={1.5} />
         )}
-        <span className="text-[10px] text-text-primary">
-          {priceText}
-        </span>
+        <span className="text-[10px] text-text-primary">{priceText}</span>
       </div>
     </TooltipAnchor>
   );
@@ -72,13 +60,11 @@ const FreeBadge = memo(() => {
 
   return (
     <div
-      className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+      className="flex items-center gap-1 rounded-full border border-border-medium bg-surface-chat px-2 py-0.5"
       style={{ minWidth: '76px' }}
     >
       <Gift size={14} className="text-orange-400" strokeWidth={1.5} />
-      <span className="text-[10px] text-text-primary">
-        {freeText}
-      </span>
+      <span className="text-[10px] text-text-primary">{freeText}</span>
     </div>
   );
 });
@@ -87,11 +73,7 @@ const FreeBadge = memo(() => {
  * New badge component for new models
  * Memoized to prevent unnecessary re-renders
  */
-const NewBadge = memo(({
-  createdAt,
-}: {
-  createdAt?: number | null;
-}) => {
+const NewBadge = memo(({ createdAt }: { createdAt?: number | null }) => {
   const newText = 'NEW';
 
   // Generate tooltip text with creation date if available
@@ -116,13 +98,9 @@ const NewBadge = memo(({
   }
 
   return (
-    <TooltipAnchor
-      description={tooltipText}
-      side="top"
-      className="cursor-pointer"
-    >
-      <div className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-sidebar/20 border-[0.5px] border-[#ffb525f7] shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] dark:bg-[hsl(320,20%,2.9%)] dark:border-amber-200/80 dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)] transition-all duration-300">
-        <span className="text-[10px] font-semibold text-color-heading">{newText}</span>
+    <TooltipAnchor description={tooltipText} side="top" className="cursor-pointer">
+      <div className="bg-sidebar/20 flex items-center justify-center gap-1 rounded-full border-[0.5px] border-[#ffb525f7] px-2 py-0.5 shadow-[0px_1px_4px_#ffae1082,inset_0px_-2px_10px_#ffb52575] transition-all duration-300 dark:border-amber-200/80 dark:bg-[hsl(320,20%,2.9%)] dark:shadow-[0px_1px_4px_rgba(186,130,21,0.32),inset_0px_-2px_10px_rgba(186,130,21,0.43)]">
+        <span className="text-color-heading text-[10px] font-semibold">{newText}</span>
       </div>
     </TooltipAnchor>
   );
@@ -132,28 +110,18 @@ const NewBadge = memo(({
  * Context window badge component for displaying max tokens
  * Memoized to prevent unnecessary re-renders
  */
-const ContextBadge = memo(({
-  tokens,
-}: {
-  tokens: number;
-}) => {
+const ContextBadge = memo(({ tokens }: { tokens: number }) => {
   const formattedTokens = formatTokenCount(tokens);
   const tooltipText = 'Max Context Tokens';
 
   return (
-    <TooltipAnchor
-      description={tooltipText}
-      side="top"
-      className="cursor-pointer"
-    >
+    <TooltipAnchor description={tooltipText} side="top" className="cursor-pointer">
       <div
-        className="flex items-center justify-center gap-1 px-2 py-0.5 rounded-full bg-surface-chat border border-border-medium"
+        className="flex items-center justify-center gap-1 rounded-full border border-border-medium bg-surface-chat px-2 py-0.5"
         style={{ minWidth: '61px' }}
       >
         <Target size={12} className="text-text-primary" strokeWidth={1.5} />
-        <span className="text-[10px] text-text-primary">
-          {formattedTokens}
-        </span>
+        <span className="text-[10px] text-text-primary">{formattedTokens}</span>
       </div>
     </TooltipAnchor>
   );
@@ -162,71 +130,69 @@ const ContextBadge = memo(({
 /**
  * Pre-memoized badges component to keep ModelSpecItem clean
  */
-export const ModelBadges = memo(({
-  spec,
-  inputPrice: passedInputPrice,
-  outputPrice: passedOutputPrice,
-  showPricing: passedShowPricing,
-  isFree: passedIsFree,
-  maxTokens: passedMaxTokens,
-  disabled: passedDisabled,
-}: {
-  spec?: TModelSpec;
-  inputPrice?: number | null;
-  outputPrice?: number | null;
-  showPricing?: boolean;
-  isFree?: boolean;
-  maxTokens?: number | null;
-  disabled?: boolean;
-}) => {
-  // Get pricing data from the hook in litellmInfoAdapter.ts
-  const pricingInfo = useModelPricingInfo(spec ?? {} as TModelSpec);
-  const modelName = spec?.preset?.model || '';
+export const ModelBadges = memo(
+  ({
+    spec,
+    inputPrice: passedInputPrice,
+    outputPrice: passedOutputPrice,
+    showPricing: passedShowPricing,
+    isFree: passedIsFree,
+    maxTokens: passedMaxTokens,
+    disabled: passedDisabled,
+  }: {
+    spec?: TModelSpec;
+    inputPrice?: number | null;
+    outputPrice?: number | null;
+    showPricing?: boolean;
+    isFree?: boolean;
+    maxTokens?: number | null;
+    disabled?: boolean;
+  }) => {
+    // Get pricing data from the hook in litellmInfoAdapter.ts
+    const pricingInfo = useModelPricingInfo(spec ?? ({} as TModelSpec));
+    const modelName = spec?.preset?.model || '';
 
-  // Get provider information from the model's endpoint
-  const endpoint = spec?.preset?.endpoint || '';
+    // Get provider information from the model's endpoint
+    const endpoint = spec?.preset?.endpoint || '';
 
-  // Check if model is new using OpenRouter data
-  const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
+    // Check if model is new using OpenRouter data
+    const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
 
-  // Use passed props if available, otherwise use hook data
-  const inputPrice = passedInputPrice ?? pricingInfo?.inputPrice ?? null;
-  const outputPrice = passedOutputPrice ?? pricingInfo?.outputPrice ?? null;
-  const showPricing = passedShowPricing ?? pricingInfo?.showPricing ?? true;
-  const isFree = passedIsFree ?? pricingInfo?.isFree ?? false;
-  const maxTokens = passedMaxTokens ?? pricingInfo?.maxTokens ?? null;
-  const disabled = passedDisabled ?? pricingInfo?.disabled ?? false;
+    // Use passed props if available, otherwise use hook data
+    const inputPrice = passedInputPrice ?? pricingInfo?.inputPrice ?? null;
+    const outputPrice = passedOutputPrice ?? pricingInfo?.outputPrice ?? null;
+    const showPricing = passedShowPricing ?? pricingInfo?.showPricing ?? true;
+    const isFree = passedIsFree ?? pricingInfo?.isFree ?? false;
+    const maxTokens = passedMaxTokens ?? pricingInfo?.maxTokens ?? null;
+    const disabled = passedDisabled ?? pricingInfo?.disabled ?? false;
 
-  // If badges are explicitly disabled, show nothing
-  if (disabled) {
-    return null;
-  }
+    // If badges are explicitly disabled, show nothing
+    if (disabled) {
+      return null;
+    }
 
-  // Don't show anything if no pricing info and no token info
-  if (!showPricing && !maxTokens && !isFree) {
-    return null;
-  }
+    // Don't show anything if no pricing info and no token info
+    if (!showPricing && !maxTokens && !isFree) {
+      return null;
+    }
 
-  // Check if both input and output prices are 0 (free model)
-  const isZeroPriced = inputPrice === 0 && outputPrice === 0;
-  const shouldShowFree = isFree || isZeroPriced;
+    // Check if both input and output prices are 0 (free model)
+    const isZeroPriced = inputPrice === 0 && outputPrice === 0;
+    const shouldShowFree = isFree || isZeroPriced;
 
-  return (
-    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 mt-1">
-      {isNew && <NewBadge createdAt={createdAt} />}
+    return (
+      <div className="mt-1 flex flex-wrap items-center gap-2 sm:flex-nowrap">
+        {isNew && <NewBadge createdAt={createdAt} />}
 
-      {shouldShowFree && (
-        <FreeBadge />
-      )}
-      {showPricing && !shouldShowFree && inputPrice !== null && (
-        <PriceBadge type="input" price={inputPrice} />
-      )}
-      {showPricing && !shouldShowFree && outputPrice !== null && (
-        <PriceBadge type="output" price={outputPrice} />
-      )}
-      {maxTokens !== null && maxTokens !== undefined && (
-        <ContextBadge tokens={maxTokens} />
-      )}
-    </div>
-  );
-});
+        {shouldShowFree && <FreeBadge />}
+        {showPricing && !shouldShowFree && inputPrice !== null && (
+          <PriceBadge type="input" price={inputPrice} />
+        )}
+        {showPricing && !shouldShowFree && outputPrice !== null && (
+          <PriceBadge type="output" price={outputPrice} />
+        )}
+        {maxTokens !== null && maxTokens !== undefined && <ContextBadge tokens={maxTokens} />}
+      </div>
+    );
+  },
+);

@@ -68,8 +68,8 @@ const usePromptSuggestions = () => {
         icon: <Code className="max-sm:block" />,
         prompts: [
           { text: 'Write code to invert a binary search tree in Python' },
-          { text: 'What\'s the difference between Promise.all and Promise.allSettled?' },
-          { text: 'Explain React\'s useEffect cleanup function' },
+          { text: "What's the difference between Promise.all and Promise.allSettled?" },
+          { text: "Explain React's useEffect cleanup function" },
           { text: 'Best practices for error handling in async/await' },
         ],
       },
@@ -78,7 +78,7 @@ const usePromptSuggestions = () => {
         name: 'Learn',
         icon: <GraduationCap className="max-sm:block" />,
         prompts: [
-          { text: 'Beginner\'s guide to TypeScript' },
+          { text: "Beginner's guide to TypeScript" },
           { text: 'Explain the CAP theorem in distributed systems' },
           { text: 'Why is AI so expensive?' },
           { text: 'Are black holes real?' },
@@ -272,7 +272,7 @@ export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestion
   return (
     <div
       className={cn(
-        'mb-6 mt-6 w-full px-4 transition-opacity duration-500 sm:px-0 sm:min-w-[550px] h-[280px] sm:h-[100%]',
+        'mb-6 mt-6 h-[280px] w-full px-4 transition-opacity duration-500 sm:h-[100%] sm:min-w-[550px] sm:px-0',
         isVisible ? 'opacity-100' : 'opacity-0',
       )}
       style={{ willChange: 'opacity' }} // Hint for better animation performance
