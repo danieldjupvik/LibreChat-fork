@@ -116,13 +116,13 @@ export const fetchLiteLLMModelInfo = async (): Promise<Record<string, LiteLLMMod
       throw new Error(`Failed to fetch model info: ${response.status}`);
     }
 
-    const responseData = await response.json() as LiteLLMResponse;
+    const responseData = (await response.json()) as LiteLLMResponse;
 
     // Transform the response into a map of model_name -> model_info
     const modelInfoMap: Record<string, LiteLLMModelInfo> = {};
 
     if (responseData.data && Array.isArray(responseData.data)) {
-      responseData.data.forEach(modelData => {
+      responseData.data.forEach((modelData) => {
         if (modelData.model_name && modelData.model_info) {
           modelInfoMap[modelData.model_name] = modelData.model_info;
 
@@ -151,13 +151,15 @@ export const fetchLiteLLMModelInfo = async (): Promise<Record<string, LiteLLMMod
  */
 export const initLiteLLMModelData = async (): Promise<Record<string, LiteLLMModelInfo>> => {
   if (!globalLiteLLMDataPromise) {
-    globalLiteLLMDataPromise = fetchLiteLLMModelInfo().then(data => {
-      modelInfoCache = data;
-      return data;
-    }).catch(err => {
-      console.warn('Failed to initialize LiteLLM model data:', err);
-      return {};
-    });
+    globalLiteLLMDataPromise = fetchLiteLLMModelInfo()
+      .then((data) => {
+        modelInfoCache = data;
+        return data;
+      })
+      .catch((err) => {
+        console.warn('Failed to initialize LiteLLM model data:', err);
+        return {};
+      });
   }
   return globalLiteLLMDataPromise;
 };
@@ -221,9 +223,12 @@ export const useModelPricingInfo = (spec: TModelSpec): ModelPricingInfo => {
       }
 
       // If we have missing data and model name is provided, try to get from LiteLLM
-      const needsMoreData = !infoData.disabled &&
+      const needsMoreData =
+        !infoData.disabled &&
         modelName &&
-        (infoData.maxTokens === null || infoData.inputPrice === null || infoData.outputPrice === null);
+        (infoData.maxTokens === null ||
+          infoData.inputPrice === null ||
+          infoData.outputPrice === null);
 
       if (needsMoreData) {
         try {
@@ -251,9 +256,11 @@ export const useModelPricingInfo = (spec: TModelSpec): ModelPricingInfo => {
 
             // Check if both input and output costs are 0 (free model)
             // Only update isFree if it wasn't explicitly set
-            if (!spec.badges?.isFree &&
-                modelInfo.input_cost_per_token === 0 &&
-                modelInfo.output_cost_per_token === 0) {
+            if (
+              !spec.badges?.isFree &&
+              modelInfo.input_cost_per_token === 0 &&
+              modelInfo.output_cost_per_token === 0
+            ) {
               infoData.isFree = true;
             }
           }
@@ -268,7 +275,9 @@ export const useModelPricingInfo = (spec: TModelSpec): ModelPricingInfo => {
     };
 
     getPricingInfo();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+    };
   }, [spec, modelName]);
 
   // Memoize the returned object to prevent unnecessary re-renders

@@ -14,7 +14,7 @@ const ShortcutsHelp = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        setIsVisible(prev => !prev);
+        setIsVisible((prev) => !prev);
       }
 
       // Also close when Escape is pressed
@@ -43,26 +43,35 @@ const ShortcutsHelp = () => {
   }, [isVisible]);
 
   // If not visible, don't render anything
-  if (!isVisible) { return null; }
+  if (!isVisible) {
+    return null;
+  }
 
   // Render the shortcuts help overlay
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-50 flex animate-fade-in items-center justify-center bg-black bg-opacity-50 p-4">
       <div
         ref={modalRef}
-        className="bg-surface-primary dark:bg-gray-800 text-text-primary rounded-lg shadow-xl max-w-md w-full max-h-[80vh] overflow-y-auto"
+        className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-lg bg-surface-primary text-text-primary shadow-xl dark:bg-gray-800"
       >
-        <div className="p-4 border-b border-surface-tertiary flex justify-between items-center">
-          <h2 className="text-lg font-semibold">
-            {'Keyboard Shortcuts'}
-          </h2>
+        <div className="flex items-center justify-between border-b border-surface-tertiary p-4">
+          <h2 className="text-lg font-semibold">{'Keyboard Shortcuts'}</h2>
           <button
-            className="text-text-secondary hover:text-text-primary transition-colors"
+            className="text-text-secondary transition-colors hover:text-text-primary"
             onClick={() => setIsVisible(false)}
             aria-label="Close"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
             </svg>
           </button>
         </div>
@@ -74,20 +83,13 @@ const ShortcutsHelp = () => {
               keysWin={['Ctrl', 'Shift', 'O']}
               description="Create a new chat"
             />
-            <ShortcutItem
-              keys={['⌘', 'B']}
-              keysWin={['Ctrl', 'B']}
-              description="Toggle sidebar"
-            />
+            <ShortcutItem keys={['⌘', 'B']} keysWin={['Ctrl', 'B']} description="Toggle sidebar" />
             <ShortcutItem
               keys={['⌘', 'Shift', 'D']}
               keysWin={['Ctrl', 'Shift', 'D']}
               description="Cycle theme (dark/light/system)"
             />
-            <ShortcutItem
-              keys={['Esc']}
-              description="Stop AI generation"
-            />
+            <ShortcutItem keys={['Esc']} description="Stop AI generation" />
             <ShortcutItem
               keys={['⌘', 'K']}
               keysWin={['Ctrl', 'K']}
@@ -96,7 +98,7 @@ const ShortcutsHelp = () => {
           </ul>
         </div>
 
-        <div className="p-4 border-t border-surface-tertiary text-center text-text-secondary text-sm">
+        <div className="border-t border-surface-tertiary p-4 text-center text-sm text-text-secondary">
           {'Press Esc or click outside to close'}
         </div>
       </div>
@@ -122,7 +124,7 @@ const ShortcutItem: React.FC<ShortcutItemProps> = ({ keys, keysWin, description 
       <div className="flex items-center space-x-1">
         {shortcutKeys.map((key, index) => (
           <React.Fragment key={index}>
-            <kbd className="px-2 py-1 bg-surface-secondary dark:bg-gray-700 rounded text-sm">
+            <kbd className="rounded bg-surface-secondary px-2 py-1 text-sm dark:bg-gray-700">
               {formatKeySymbol(key)}
             </kbd>
             {index < shortcutKeys.length - 1 && <span>+</span>}

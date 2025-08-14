@@ -2,8 +2,8 @@ name: Build and Push LibreChat Dev Image
 
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: [upstream-changes-merged]
+  # repository_dispatch:
+  #   types: [upstream-changes-merged]
   push:
     branches:
       - main

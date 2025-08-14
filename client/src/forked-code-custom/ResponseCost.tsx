@@ -1,6 +1,6 @@
 import { memo, useEffect, useState, useRef, useCallback } from 'react';
 import type { TMessage, TConversation } from 'librechat-data-provider';
-import { TooltipAnchor } from '../components/ui/Tooltip';
+import { TooltipAnchor } from '@librechat/client';
 import { DollarSign } from 'lucide-react';
 import { fetchLiteLLMModelInfo } from './litellmInfoAdapter';
 import { cn } from '../utils';

@@ -7,7 +7,7 @@
  * proposing adding data-shortcut attributes to the upstream repo for better stability.
  */
 
-import { isMacOS, getCmdKey, toggleTheme } from './utils';
+import { getCmdKey, toggleTheme } from './utils';
 
 // Get the appropriate command key based on OS
 const cmdKey = getCmdKey();
@@ -86,9 +86,9 @@ const safelyClickElement = (
   element: HTMLElement | null | undefined,
   actionName: string,
   fallbackOptions?: {
-    urlPath?: string,
-    stateAction?: () => void
-  }
+    urlPath?: string;
+    stateAction?: () => void;
+  },
 ) => {
   if (element) {
     try {
@@ -145,11 +145,7 @@ const handleNewChat = () => {
     document.querySelector('a[aria-label*="new chat" i]') ||
     document.querySelector('button[aria-label*="new chat" i]');
 
-  safelyClickElement(
-    newChatButton as HTMLElement,
-    'New chat',
-    { urlPath: '/c/new' }
-  );
+  safelyClickElement(newChatButton as HTMLElement, 'New chat', { urlPath: '/c/new' });
 };
 
 /**
@@ -209,7 +205,9 @@ const handleToggleTheme = () => {
     // Provide feedback based on the theme that was set
     if (newTheme === 'system') {
       const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      console.log(`Theme changed to system (currently ${systemIsDark ? 'dark' : 'light'} based on OS setting)`);
+      console.log(
+        `Theme changed to system (currently ${systemIsDark ? 'dark' : 'light'} based on OS setting)`,
+      );
     } else {
       console.log(`Theme changed to ${newTheme}`);
     }

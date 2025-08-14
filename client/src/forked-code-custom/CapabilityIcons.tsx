@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Brain, ImageUp, Globe, FlaskConical, Microscope } from 'lucide-react';
-import { TooltipAnchor } from '~/components/ui/Tooltip';
+import { TooltipAnchor } from '@librechat/client';
 import { cn } from '~/utils';
 
 const getCapabilityDescription = (type: string): string => {
@@ -64,13 +64,13 @@ export const CapabilityIcon = memo(({ type }: { type: string }) => {
     <TooltipAnchor
       description={description}
       side="top"
-      className="cursor-pointer flex items-center justify-center"
+      className="flex cursor-pointer items-center justify-center"
     >
       <div
         className={cn(
-          'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full backdrop-blur-sm bg-opacity-80',
+          'relative flex h-6 w-6 items-center justify-center overflow-hidden rounded-full bg-opacity-80 backdrop-blur-sm',
           bg,
-          ring
+          ring,
         )}
       >
         {iconElement}

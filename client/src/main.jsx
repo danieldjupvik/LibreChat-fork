@@ -7,6 +7,8 @@ import './mobile.css';
 import './forked-style-custom/custom-daniel-ai.css';
 import { ApiErrorBoundaryProvider } from './hooks/ApiErrorBoundaryContext';
 import { ForkedCustomizations } from './forked-code-custom';
+import 'katex/dist/katex.min.css';
+import 'katex/dist/contrib/copy-tex.js';
 
 const container = document.getElementById('root');
 const root = createRoot(container);
