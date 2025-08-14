@@ -22,7 +22,7 @@ async function fetchAllSubscriptions(apiKey, baseUrl) {
     try {
       const response = await axios.get(`${baseUrl}?page=${currentPage}`, {
         headers: {
-          'Authorization': `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
         },
         timeout: 5000, // Optional: timeout after 5 seconds
@@ -86,8 +86,7 @@ router.get('/subscription', async (req, res) => {
     // If the email or user ID is whitelisted, grant subscription access
     if (
       email &&
-      (whitelistedEmails.includes(email.toLowerCase()) ||
-        whitelistedUsers.includes(userId))
+      (whitelistedEmails.includes(email.toLowerCase()) || whitelistedUsers.includes(userId))
     ) {
       return res.json({
         hasSubscription: true,
@@ -105,7 +104,7 @@ router.get('/subscription', async (req, res) => {
     // Find the active subscription for this user
     const normalizedUserId = userId.trim();
     const userSubscription = allSubscriptions.find(
-      sub => sub.external_id.trim() === normalizedUserId && sub.status === 'active',
+      (sub) => sub.external_id.trim() === normalizedUserId && sub.status === 'active',
     );
 
     // Cache response for 5 minutes to reduce load on the Lago service
