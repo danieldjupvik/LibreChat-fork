@@ -63,3 +63,48 @@ export const toggleTheme = (): string => {
 
   return newTheme;
 };
+
+/**
+ * Fetches subscription status from Lago through our proxy endpoint.
+ * Always makes a fresh API call.
+ *
+ * @param userId - The user ID to check subscription for
+ * @param email - The user email to check against whitelist
+ * @returns An object with subscription status information
+ */
+export const fetchSubscriptionStatus = async (userId: string, email?: string) => {
+  if (!userId) {
+    console.error('fetchSubscriptionStatus called without userId');
+    return {
+      hasSubscription: false,
+      error: true,
+      errorMessage: 'No user ID provided',
+      fallback: false,
+    };
+  }
+
+  try {
+    const url = new URL('/api/forked/lago/subscription', window.location.origin);
+    url.searchParams.append('userId', userId);
+    if (email) {
+      url.searchParams.append('email', email);
+    }
+
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+      throw new Error(`Error fetching subscription status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error checking subscription status:', error);
+    return {
+      hasSubscription: false,
+      error: true,
+      errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      fallback: false,
+    };
+  }
+};
