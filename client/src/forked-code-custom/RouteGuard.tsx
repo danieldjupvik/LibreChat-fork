@@ -4,11 +4,11 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchSubscriptionStatus } from './utils';
 import SubscriptionRequiredPage from './SubscriptionRequiredPage';
 
-type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error'
+type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error';
 
 type RouteGuardProps = {
-  children: ReactNode
-}
+  children: ReactNode;
+};
 
 const publicPaths = [
   '/login',
@@ -31,39 +31,33 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
   const [isCheckComplete, setIsCheckComplete] = useState(false);
   const [isRechecking, setIsRechecking] = useState(false);
 
-  const isPublicPath = publicPaths.some(path =>
-    location.pathname.startsWith(path)
-  );
+  const isPublicPath = publicPaths.some((path) => location.pathname.startsWith(path));
 
   // Subscription API Check Logic (no caching in localStorage)
-  const performSubscriptionCheck = useCallback(
-    async (userId: string, email?: string) => {
-      console.log('[RouteGuard Async] Starting API check...');
-      try {
-        const data = await fetchSubscriptionStatus(userId, email);
-        console.log('[RouteGuard Async] API result:', data);
-        let finalStatus: CheckStatus;
+  const performSubscriptionCheck = useCallback(async (userId: string, email?: string) => {
+    console.log('[RouteGuard Async] Starting API check...');
+    try {
+      const data = await fetchSubscriptionStatus(userId, email);
+      console.log('[RouteGuard Async] API result:', data);
+      let finalStatus: CheckStatus;
 
-        if (data.error && !data.fallback) {
-          finalStatus = 'error';
-        } else {
-          const accessGranted =
-            data.hasSubscription || data.whitelisted || data.fallback;
-          finalStatus = accessGranted ? 'access-granted' : 'subscription-required';
-        }
-
-        setCheckStatus(finalStatus);
-        setIsCheckComplete(true);
-      } catch (fetchError) {
-        console.error('[RouteGuard Async] API fetch error:', fetchError);
-        setCheckStatus('error');
-        setIsCheckComplete(true);
-      } finally {
-        setIsRechecking(false);
+      if (data.error && !data.fallback) {
+        finalStatus = 'error';
+      } else {
+        const accessGranted = data.hasSubscription || data.whitelisted || data.fallback;
+        finalStatus = accessGranted ? 'access-granted' : 'subscription-required';
       }
-    },
-    []
-  );
+
+      setCheckStatus(finalStatus);
+      setIsCheckComplete(true);
+    } catch (fetchError) {
+      console.error('[RouteGuard Async] API fetch error:', fetchError);
+      setCheckStatus('error');
+      setIsCheckComplete(true);
+    } finally {
+      setIsRechecking(false);
+    }
+  }, []);
 
   // Triggered manually from SubscriptionRequiredPage to recheck subscription
   const handleRecheckSubscription = useCallback(() => {
@@ -105,7 +99,14 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, user?.email, isAuthenticated, location.pathname, isPublicPath, performSubscriptionCheck]);
+  }, [
+    user?.id,
+    user?.email,
+    isAuthenticated,
+    location.pathname,
+    isPublicPath,
+    performSubscriptionCheck,
+  ]);
 
   // Rendering logic: show nothing until auth and subscription check are complete
   if (isPublicPath) {

@@ -5,7 +5,6 @@ import {
   ShieldCheck,
   AlertCircle,
   LockKeyhole,
-  ArrowRight,
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
@@ -13,17 +12,21 @@ import {
 // Text constants to avoid ESLint literal string warnings
 const TEXT = {
   errorTitle: 'Connection Issue',
-  errorMessage: 'We encountered a problem verifying your subscription status. Please try again or contact support if the issue persists.',
+  errorMessage:
+    'We encountered a problem verifying your subscription status. Please try again or contact support if the issue persists.',
   tryAgain: 'Try Again',
   logout: 'Logout',
   needHelp: 'Need help? Contact',
   supportEmail: 'support@danieldjupvik.com',
   supportEmailHref: 'sockets.might-9b@icloud.com',
   unlockAccess: 'Unlock Full Access',
-  subscriptionInfo: 'To get access to this premium service, you need to activate your subscription. Our pay-as-you-go model ensures you only pay for what you use.',
-  stripeInfo: 'Our payment system is powered by Stripe, ensuring your payment information is secure and protected.',
+  subscriptionInfo:
+    'To get access to this premium service, you need to activate your subscription. Our pay-as-you-go model ensures you only pay for what you use.',
+  stripeInfo:
+    'Our payment system is powered by Stripe, ensuring your payment information is secure and protected.',
   accessStatus: 'Access Status',
-  statusInfo: 'Your subscription is currently inactive. You can check again to verify your access status.',
+  statusInfo:
+    'Your subscription is currently inactive. You can check again to verify your access status.',
   verifyStatus: 'Verify Access Status',
   features: {
     payAsYouGo: {
@@ -120,11 +123,7 @@ const SubscriptionRequiredPage = ({
     />
   );
 
-  return (
-    <div className="h-full flex items-center justify-center self-center">
-      {content}
-    </div>
-  );
+  return <div className="flex h-full items-center justify-center self-center">{content}</div>;
 };
 
 const ErrorView = ({
@@ -141,32 +140,30 @@ const ErrorView = ({
   return (
     <div
       id="error-card"
-      className={`flex flex-col justify-center w-full h-full sm:h-auto sm:max-w-lg rounded-none sm:rounded-lg bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 border border-border-light p-6 md:p-10 shadow-lg sm:mx-4 transition-all duration-700 ease-out transform ${
-        isVisible
-          ? 'opacity-100 translate-y-0 scale-100'
-          : 'opacity-0 translate-y-8 scale-95'
+      className={`flex h-full w-full transform flex-col justify-center rounded-none border border-border-light bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 p-6 shadow-lg transition-all duration-700 ease-out sm:mx-4 sm:h-auto sm:max-w-lg sm:rounded-lg md:p-10 ${
+        isVisible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
       }`}
       style={{ willChange: 'opacity, transform' }}
     >
-      <div className="flex flex-col max-w-5xl mx-auto w-full">
-        <div className="mx-auto mb-6 md:mb-8 flex items-center justify-center">
-          <div className="rounded-full bg-surface-destructive/20 p-3">
+      <div className="mx-auto flex w-full max-w-5xl flex-col">
+        <div className="mx-auto mb-6 flex items-center justify-center md:mb-8">
+          <div className="bg-surface-destructive/20 rounded-full p-3">
             <AlertCircle size={32} className="text-surface-destructive" />
           </div>
         </div>
 
-        <h2 className="mb-4 md:mb-6 text-center text-2xl font-bold text-text-primary">{TEXT.errorTitle}</h2>
+        <h2 className="mb-4 text-center text-2xl font-bold text-text-primary md:mb-6">
+          {TEXT.errorTitle}
+        </h2>
 
-        <p className="mb-8 md:mb-10 text-center text-text-secondary">
-          {TEXT.errorMessage}
-        </p>
+        <p className="mb-8 text-center text-text-secondary md:mb-10">{TEXT.errorMessage}</p>
 
-        <div className="space-y-3 sm:space-y-0 sm:flex sm:justify-center sm:gap-4">
+        <div className="space-y-3 sm:flex sm:justify-center sm:gap-4 sm:space-y-0">
           <button
             type="button"
             onClick={onRecheck}
             disabled={isLoading}
-            className="w-full sm:w-auto inline-flex items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200"
+            className="inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             aria-label="Retry checking subscription status"
             aria-disabled={isLoading}
           >
@@ -180,7 +177,7 @@ const ErrorView = ({
 
           <button
             onClick={onLogout}
-            className="w-full sm:w-auto inline-flex items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-all duration-200"
+            className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 sm:w-auto"
             tabIndex={0}
             aria-label="Logout"
             onKeyDown={(e) => e.key === 'Enter' && onLogout()}
@@ -190,12 +187,10 @@ const ErrorView = ({
         </div>
 
         <div className="mt-6 md:mt-8">
-          <div className="rounded-lg p-4 md:p-6 border border-border-light bg-surface-tertiary">
+          <div className="rounded-lg border border-border-light bg-surface-tertiary p-4 md:p-6">
             <div className="flex items-center gap-3">
-              <ShieldCheck size={25} className="text-[#3bd5b0] flex-shrink-0" />
-              <p className="text-sm text-text-secondary">
-                {TEXT.stripeInfo}
-              </p>
+              <ShieldCheck size={25} className="flex-shrink-0 text-[#3bd5b0]" />
+              <p className="text-sm text-text-secondary">{TEXT.stripeInfo}</p>
             </div>
           </div>
         </div>
@@ -239,44 +234,38 @@ const SubscriptionView = ({
   return (
     <div
       id="subscription-card"
-      className={`flex flex-col justify-center w-full h-full sm:h-auto sm:max-w-3xl md:max-w-4xl rounded-none sm:rounded-lg bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 border border-border-light p-6 md:p-10 shadow-lg sm:mx-4 transition-all duration-700 ease-out transform ${
-        isVisible
-          ? 'opacity-100 translate-y-0 scale-100'
-          : 'opacity-0 translate-y-8 scale-95'
+      className={`flex h-full w-full transform flex-col justify-center rounded-none border border-border-light bg-surface-primary-alt bg-gradient-to-br from-[#3bd5b0]/5 via-transparent to-[#3bd5b0]/10 p-6 shadow-lg transition-all duration-700 ease-out sm:mx-4 sm:h-auto sm:max-w-3xl sm:rounded-lg md:max-w-4xl md:p-10 ${
+        isVisible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
       }`}
       style={{ willChange: 'opacity, transform' }}
     >
-      <div className="flex flex-col md:flex-row max-w-5xl mx-auto w-full">
+      <div className="mx-auto flex w-full max-w-5xl flex-col md:flex-row">
         {/* Left column - Information */}
-        <div className="flex flex-col flex-1 md:pr-10">
-          <div className="mb-6 md:mb-8 flex items-center space-x-2">
+        <div className="flex flex-1 flex-col md:pr-10">
+          <div className="mb-6 flex items-center space-x-2 md:mb-8">
             <div className="rounded-full bg-[#3bd5b0]/20 p-2">
               <Sparkles className="h-6 w-6 text-[#3bd5b0]" />
             </div>
-            <h2 className="text-2xl font-bold text-text-primary" style={{ marginLeft: '0.75rem' }}>{TEXT.unlockAccess}</h2>
+            <h2 className="text-2xl font-bold text-text-primary" style={{ marginLeft: '0.75rem' }}>
+              {TEXT.unlockAccess}
+            </h2>
           </div>
 
-          <p className="text-text-secondary mb-8 md:mb-10">
-            {TEXT.subscriptionInfo}
-          </p>
+          <p className="mb-8 text-text-secondary md:mb-10">{TEXT.subscriptionInfo}</p>
 
-          <div className="space-y-6 md:space-y-8 mb-8 md:mb-10">
+          <div className="mb-8 space-y-6 md:mb-10 md:space-y-8">
             {features.map((feature, index) => (
               <div
                 key={index}
-                className={`flex items-start transition-all duration-700 ease-out transform ${
-                  isVisible
-                    ? 'opacity-100 translate-x-0'
-                    : 'opacity-0 translate-x-8'
+                className={`flex transform items-start transition-all duration-700 ease-out ${
+                  isVisible ? 'translate-x-0 opacity-100' : 'translate-x-8 opacity-0'
                 }`}
                 style={{
                   transitionDelay: `${300 + index * 150}ms`,
                   willChange: 'opacity, transform',
                 }}
               >
-                <div className="mt-1 mr-3 flex-shrink-0">
-                  {feature.icon}
-                </div>
+                <div className="mr-3 mt-1 flex-shrink-0">{feature.icon}</div>
                 <div>
                   <h3 className="font-medium text-text-primary">{feature.title}</h3>
                   <p className="text-sm text-text-secondary">{feature.description}</p>
@@ -286,28 +275,26 @@ const SubscriptionView = ({
           </div>
 
           {/* Right column - Actions */}
-          <div className="md:hidden flex flex-col mb-6">
+          <div className="mb-6 flex flex-col md:hidden">
             <div
-              className={`bg-surface-chat p-5 rounded-lg mb-4 border border-border-light transition-all duration-700 ease-out transform ${
+              className={`mb-4 transform rounded-lg border border-border-light bg-surface-chat p-5 transition-all duration-700 ease-out ${
                 isVisible
-                  ? 'opacity-100 translate-y-0 scale-100'
-                  : 'opacity-0 translate-y-8 scale-95'
+                  ? 'translate-y-0 scale-100 opacity-100'
+                  : 'translate-y-8 scale-95 opacity-0'
               }`}
               style={{
                 transitionDelay: '500ms',
                 willChange: 'opacity, transform',
               }}
             >
-              <h3 className="font-medium text-text-primary mb-2">{TEXT.accessStatus}</h3>
-              <p className="text-sm text-text-secondary mb-6">
-                {TEXT.statusInfo}
-              </p>
+              <h3 className="mb-2 font-medium text-text-primary">{TEXT.accessStatus}</h3>
+              <p className="mb-6 text-sm text-text-secondary">{TEXT.statusInfo}</p>
 
               <button
                 type="button"
                 onClick={onRecheck}
                 disabled={isLoading}
-                className="w-full inline-flex items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200 mb-3"
+                className="mb-3 inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 aria-label="Recheck subscription status"
                 aria-disabled={isLoading}
               >
@@ -321,7 +308,7 @@ const SubscriptionView = ({
 
               <button
                 onClick={onLogout}
-                className="w-full inline-flex items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-all duration-200"
+                className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
                 tabIndex={0}
                 aria-label="Logout"
                 onKeyDown={(e) => e.key === 'Enter' && onLogout()}
@@ -332,10 +319,8 @@ const SubscriptionView = ({
           </div>
 
           <div
-            className={`rounded-lg p-4 md:p-6 border border-border-light bg-surface-tertiary md:mb-0 transition-all duration-700 ease-out transform ${
-              isVisible
-                ? 'opacity-100 translate-y-0'
-                : 'opacity-0 translate-y-8'
+            className={`transform rounded-lg border border-border-light bg-surface-tertiary p-4 transition-all duration-700 ease-out md:mb-0 md:p-6 ${
+              isVisible ? 'translate-y-0 opacity-100' : 'translate-y-8 opacity-0'
             }`}
             style={{
               transitionDelay: '600ms',
@@ -343,37 +328,31 @@ const SubscriptionView = ({
             }}
           >
             <div className="flex items-center gap-3">
-              <ShieldCheck size={25} className="text-[#3bd5b0] flex-shrink-0" />
-              <p className="text-sm text-text-secondary">
-                {TEXT.stripeInfo}
-              </p>
+              <ShieldCheck size={25} className="flex-shrink-0 text-[#3bd5b0]" />
+              <p className="text-sm text-text-secondary">{TEXT.stripeInfo}</p>
             </div>
           </div>
         </div>
 
         {/* Desktop Actions Column */}
-        <div className="hidden md:flex md:w-80 flex-col md:pl-10 md:border-l border-border-light">
+        <div className="hidden flex-col border-border-light md:flex md:w-80 md:border-l md:pl-10">
           <div
-            className={`bg-surface-chat p-5 rounded-lg mb-4 border border-border-light transition-all duration-700 ease-out transform ${
-              isVisible
-                ? 'opacity-100 translate-y-0 scale-100'
-                : 'opacity-0 translate-y-8 scale-95'
+            className={`mb-4 transform rounded-lg border border-border-light bg-surface-chat p-5 transition-all duration-700 ease-out ${
+              isVisible ? 'translate-y-0 scale-100 opacity-100' : 'translate-y-8 scale-95 opacity-0'
             }`}
             style={{
               transitionDelay: '500ms',
               willChange: 'opacity, transform',
             }}
           >
-            <h3 className="font-medium text-text-primary mb-2">{TEXT.accessStatus}</h3>
-            <p className="text-sm text-text-secondary mb-6">
-              {TEXT.statusInfo}
-            </p>
+            <h3 className="mb-2 font-medium text-text-primary">{TEXT.accessStatus}</h3>
+            <p className="mb-6 text-sm text-text-secondary">{TEXT.statusInfo}</p>
 
             <button
               type="button"
               onClick={onRecheck}
               disabled={isLoading}
-              className="w-full inline-flex items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 transition-all duration-200 mb-3"
+              className="mb-3 inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               aria-label="Recheck subscription status"
               aria-disabled={isLoading}
             >
@@ -387,7 +366,7 @@ const SubscriptionView = ({
 
             <button
               onClick={onLogout}
-              className="w-full inline-flex items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 transition-all duration-200"
+              className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
               tabIndex={0}
               aria-label="Logout"
               onKeyDown={(e) => e.key === 'Enter' && onLogout()}
