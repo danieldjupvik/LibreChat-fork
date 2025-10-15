@@ -162,12 +162,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   }
 
   // Format the cost with appropriate decimal places
-  const formattedCost =
-    cost < 0.01
-      ? cost.toFixed(6).replace(/0+$/, '').replace(/\.$/, '')
-      : cost < 0.1
-        ? cost.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
-        : cost.toFixed(2);
+  const formatCost = (value: number) => {
+    if (value < 0.01) return value.toFixed(6).replace(/0+$/, '').replace(/\.$/, '');
+    if (value < 0.1) return value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+    return value.toFixed(2);
+  };
+  const formattedCost = formatCost(cost);
 
   // Create tooltip text
   const tooltipText = tokenInfo.totalTokens
