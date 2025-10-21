@@ -27,7 +27,12 @@ const PriceBadge = memo(({ type, price }: { type: 'input' | 'output'; price: num
 
   // Display the price value directly without further conversion
   // since it's already per million tokens
-  const formattedPrice = price.toFixed(price >= 100 ? 0 : price >= 10 ? 1 : 2);
+  const getDecimalPlaces = (value: number) => {
+    if (value >= 100) return 0;
+    if (value >= 10) return 1;
+    return 2;
+  };
+  const formattedPrice = price.toFixed(getDecimalPlaces(price));
   const tooltipText = `$${formattedPrice} per 1 million tokens`;
 
   // Extract the content into a variable to avoid literal string ESLint error
