@@ -37,6 +37,10 @@ export type TModelSpec = {
     isFree?: boolean;           // Whether the model is completely free to use
     maxContextToken?: number;   // Maximum context window size in tokens
   };
+  webSearch?: boolean;
+  fileSearch?: boolean;
+  executeCode?: boolean;
+  mcpServers?: string[];
 };
 
 // Define badges schema for validation
@@ -63,6 +67,10 @@ export const tModelSpecSchema = z.object({
   authType: authTypeSchema.optional(),
   iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research'])).optional(),
   badges: badgesSchema.optional(),
+  webSearch: z.boolean().optional(),
+  fileSearch: z.boolean().optional(),
+  executeCode: z.boolean().optional(),
+  mcpServers: z.array(z.string()).optional(),
 });
 
 export const specsConfigSchema = z.object({
