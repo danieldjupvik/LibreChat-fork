@@ -1,12 +1,20 @@
-import { SheetPaths, TextPaths, FilePaths, CodePaths } from '~/components/svg';
+import {
+  TextPaths,
+  FilePaths,
+  CodePaths,
+  AudioPaths,
+  VideoPaths,
+  SheetPaths,
+} from '@librechat/client';
 import {
   megabyte,
   QueryKeys,
+  inferMimeType,
   excelMimeTypes,
-  codeTypeMapping,
+  EToolResources,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TFile, EndpointFileConfig } from 'librechat-data-provider';
+import type { TFile, EndpointFileConfig, FileConfig } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { ExtendedFile } from '~/common';
 
@@ -37,6 +45,18 @@ const artifact = {
   title: 'Code',
 };
 
+const audioFile = {
+  paths: AudioPaths,
+  fill: '#FF6B35',
+  title: 'Audio',
+};
+
+const videoFile = {
+  paths: VideoPaths,
+  fill: '#8B5CF6',
+  title: 'Video',
+};
+
 export const fileTypes = {
   /* Category matches */
   file: {
@@ -46,6 +66,8 @@ export const fileTypes = {
   },
   text: textDocument,
   txt: textDocument,
+  audio: audioFile,
+  video: videoFile,
   // application:,
 
   /* Partial matches */
@@ -203,13 +225,23 @@ export const validateFiles = ({
   fileList,
   setError,
   endpointFileConfig,
+  toolResource,
+  fileConfig,
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
   setError: (error: string) => void;
   endpointFileConfig: EndpointFileConfig;
+  toolResource?: string;
+  fileConfig: FileConfig | null;
 }) => {
-  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes } = endpointFileConfig;
+  const { fileLimit, fileSizeLimit, totalSizeLimit, supportedMimeTypes, disabled } =
+    endpointFileConfig;
+  /** Block all uploads if the endpoint is explicitly disabled */
+  if (disabled === true) {
+    setError('com_ui_attach_error_disabled');
+    return false;
+  }
   const existingFiles = Array.from(files.values());
   const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
   if (incomingTotalSize === 0) {
@@ -225,14 +257,7 @@ export const validateFiles = ({
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
-    let fileType = originalFile.type;
-    const extension = originalFile.name.split('.').pop() ?? '';
-    const knownCodeType = codeTypeMapping[extension];
-
-    // Infer MIME type for Known Code files when the type is empty or a mismatch
-    if (knownCodeType && (!fileType || fileType !== knownCodeType)) {
-      fileType = knownCodeType;
-    }
+    const fileType = inferMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
     if (!fileType) {
@@ -247,7 +272,16 @@ export const validateFiles = ({
       fileList[i] = newFile;
     }
 
-    if (!checkType(originalFile.type, supportedMimeTypes)) {
+    let mimeTypesToCheck = supportedMimeTypes;
+    if (toolResource === EToolResources.context) {
+      mimeTypesToCheck = [
+        ...(fileConfig?.text?.supportedMimeTypes || []),
+        ...(fileConfig?.ocr?.supportedMimeTypes || []),
+        ...(fileConfig?.stt?.supportedMimeTypes || []),
+      ];
+    }
+
+    if (!checkType(originalFile.type, mimeTypesToCheck)) {
       console.log(originalFile);
       setError('Currently, unsupported file type: ' + originalFile.type);
       return false;

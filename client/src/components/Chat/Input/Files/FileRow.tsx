@@ -59,10 +59,12 @@ export default function FileRow({
 
   useEffect(() => {
     if (files.length === 0) {
+      setFilesLoading(false);
       return;
     }
 
     if (files.some((file) => file.progress < 1)) {
+      setFilesLoading(true);
       return;
     }
 
@@ -131,7 +133,7 @@ export default function FileRow({
               >
                 {isImage ? (
                   <Image
-                    url={file.preview ?? file.filepath}
+                    url={file.progress === 1 ? file.filepath : (file.preview ?? file.filepath)}
                     onDelete={handleDelete}
                     progress={file.progress}
                     source={file.source}

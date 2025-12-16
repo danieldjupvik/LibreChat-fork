@@ -29,14 +29,23 @@ const toggleSwitchConfigs = [
     hoverCardText: undefined,
     key: 'hideSidePanel',
   },
+  {
+    stateAtom: store.keepScreenAwake,
+    localizationKey: 'com_nav_keep_screen_awake',
+    switchId: 'keepScreenAwake',
+    hoverCardText: undefined,
+    key: 'keepScreenAwake',
+  },
 ];
 
 export const ThemeSelector = ({
   theme,
   onChange,
+  portal = true,
 }: {
   theme: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -46,9 +55,11 @@ export const ThemeSelector = ({
     { value: 'light', label: localize('com_nav_theme_light') },
   ];
 
+  const labelId = 'theme-selector-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_theme')}</div>
+      <div id={labelId}>{localize('com_nav_theme')}</div>
 
       <Dropdown
         value={theme}
@@ -57,6 +68,8 @@ export const ThemeSelector = ({
         sizeClasses="w-[180px]"
         testId="theme-selector"
         className="z-50"
+        aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );
@@ -65,9 +78,11 @@ export const ThemeSelector = ({
 export const LangSelector = ({
   langcode,
   onChange,
+  portal = true,
 }: {
   langcode: string;
   onChange: (value: string) => void;
+  portal?: boolean;
 }) => {
   const localize = useLocalize();
 
@@ -77,6 +92,7 @@ export const LangSelector = ({
     { value: 'zh-Hans', label: localize('com_nav_lang_chinese') },
     { value: 'zh-Hant', label: localize('com_nav_lang_traditional_chinese') },
     { value: 'ar-EG', label: localize('com_nav_lang_arabic') },
+    { value: 'bs', label: localize('com_nav_lang_bosnian') },
     { value: 'da-DK', label: localize('com_nav_lang_danish') },
     { value: 'de-DE', label: localize('com_nav_lang_german') },
     { value: 'es-ES', label: localize('com_nav_lang_spanish') },
@@ -88,6 +104,7 @@ export const LangSelector = ({
     { value: 'hu-HU', label: localize('com_nav_lang_hungarian') },
     { value: 'hy-AM', label: localize('com_nav_lang_armenian') },
     { value: 'it-IT', label: localize('com_nav_lang_italian') },
+    { value: 'nb', label: localize('com_nav_lang_norwegian_bokmal') },
     { value: 'pl-PL', label: localize('com_nav_lang_polish') },
     { value: 'pt-BR', label: localize('com_nav_lang_brazilian_portuguese') },
     { value: 'pt-PT', label: localize('com_nav_lang_portuguese') },
@@ -105,20 +122,25 @@ export const LangSelector = ({
     { value: 'nl-NL', label: localize('com_nav_lang_dutch') },
     { value: 'id-ID', label: localize('com_nav_lang_indonesia') },
     { value: 'fi-FI', label: localize('com_nav_lang_finnish') },
+    { value: 'sl', label: localize('com_nav_lang_slovenian') },
     { value: 'bo', label: localize('com_nav_lang_tibetan') },
     { value: 'uk-UA', label: localize('com_nav_lang_ukrainian') },
   ];
 
+  const labelId = 'language-selector-label';
+
   return (
     <div className="flex items-center justify-between">
-      <div>{localize('com_nav_language')}</div>
+      <div id={labelId}>{localize('com_nav_language')}</div>
 
       <Dropdown
         value={langcode}
         onChange={onChange}
-        sizeClasses="[--anchor-max-height:256px]"
+        sizeClasses="[--anchor-max-height:256px] max-h-[60vh]"
         options={languageOptions}
         className="z-50"
+        aria-labelledby={labelId}
+        portal={portal}
       />
     </div>
   );

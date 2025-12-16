@@ -1,30 +1,25 @@
-const { Constants } = require('librechat-data-provider');
-const { getCustomConfig, getCachedTools } = require('~/server/services/Config');
+const { getCachedTools, getAppConfig } = require('~/server/services/Config');
 const { getLogStores } = require('~/cache');
 
-// Mock the dependencies
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
     debug: jest.fn(),
     error: jest.fn(),
+    warn: jest.fn(),
   },
 }));
 
 jest.mock('~/server/services/Config', () => ({
-  getCustomConfig: jest.fn(),
   getCachedTools: jest.fn(),
+  getAppConfig: jest.fn().mockResolvedValue({
+    filteredTools: [],
+    includedTools: [],
+  }),
+  setCachedTools: jest.fn(),
 }));
 
-jest.mock('~/server/services/ToolService', () => ({
-  getToolkitKey: jest.fn(),
-}));
-
-jest.mock('~/config', () => ({
-  getMCPManager: jest.fn(() => ({
-    loadManifestTools: jest.fn().mockResolvedValue([]),
-  })),
-  getFlowStateManager: jest.fn(),
-}));
+// loadAndFormatTools mock removed - no longer used in PluginController
+// getMCPManager mock removed - no longer used in PluginController
 
 jest.mock('~/app/clients/tools', () => ({
   availableTools: [],
@@ -35,71 +30,87 @@ jest.mock('~/cache', () => ({
   getLogStores: jest.fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
-  getToolkitKey: jest.fn(),
-  checkPluginAuth: jest.fn(),
-  filterUniquePlugins: jest.fn(),
-  convertMCPToolsToPlugins: jest.fn(),
-}));
-
-// Import the actual module with the function we want to test
 const { getAvailableTools, getAvailablePluginsController } = require('./PluginController');
-const {
-  filterUniquePlugins,
-  checkPluginAuth,
-  convertMCPToolsToPlugins,
-  getToolkitKey,
-} = require('@librechat/api');
 
 describe('PluginController', () => {
   let mockReq, mockRes, mockCache;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockReq = { user: { id: 'test-user-id' } };
+    mockReq = {
+      user: { id: 'test-user-id' },
+      config: {
+        filteredTools: [],
+        includedTools: [],
+      },
+    };
     mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     mockCache = { get: jest.fn(), set: jest.fn() };
     getLogStores.mockReturnValue(mockCache);
+
+    // Clear availableTools and toolkits arrays before each test
+    require('~/app/clients/tools').availableTools.length = 0;
+    require('~/app/clients/tools').toolkits.length = 0;
+
+    // Reset getCachedTools mock to ensure clean state
+    getCachedTools.mockReset();
+
+    // Reset getAppConfig mock to ensure clean state with default values
+    getAppConfig.mockReset();
+    getAppConfig.mockResolvedValue({
+      filteredTools: [],
+      includedTools: [],
+    });
   });
 
   describe('getAvailablePluginsController', () => {
-    beforeEach(() => {
-      mockReq.app = { locals: { filteredTools: [], includedTools: [] } };
-    });
-
     it('should use filterUniquePlugins to remove duplicate plugins', async () => {
+      // Add plugins with duplicates to availableTools
       const mockPlugins = [
         { name: 'Plugin1', pluginKey: 'key1', description: 'First' },
+        { name: 'Plugin1', pluginKey: 'key1', description: 'First duplicate' },
         { name: 'Plugin2', pluginKey: 'key2', description: 'Second' },
       ];
 
+      require('~/app/clients/tools').availableTools.push(...mockPlugins);
+
       mockCache.get.mockResolvedValue(null);
-      filterUniquePlugins.mockReturnValue(mockPlugins);
-      checkPluginAuth.mockReturnValue(true);
+
+      // Configure getAppConfig to return the expected config
+      getAppConfig.mockResolvedValueOnce({
+        filteredTools: [],
+        includedTools: [],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
-      expect(filterUniquePlugins).toHaveBeenCalled();
       expect(mockRes.status).toHaveBeenCalledWith(200);
-      // The response includes authenticated: true for each plugin when checkPluginAuth returns true
-      expect(mockRes.json).toHaveBeenCalledWith([
-        { name: 'Plugin1', pluginKey: 'key1', description: 'First', authenticated: true },
-        { name: 'Plugin2', pluginKey: 'key2', description: 'Second', authenticated: true },
-      ]);
+      const responseData = mockRes.json.mock.calls[0][0];
+      // The real filterUniquePlugins should have removed the duplicate
+      expect(responseData).toHaveLength(2);
+      expect(responseData[0].pluginKey).toBe('key1');
+      expect(responseData[1].pluginKey).toBe('key2');
     });
 
     it('should use checkPluginAuth to verify plugin authentication', async () => {
+      // checkPluginAuth returns false for plugins without authConfig
+      // so authenticated property won't be added
       const mockPlugin = { name: 'Plugin1', pluginKey: 'key1', description: 'First' };
 
+      require('~/app/clients/tools').availableTools.push(mockPlugin);
       mockCache.get.mockResolvedValue(null);
-      filterUniquePlugins.mockReturnValue([mockPlugin]);
-      checkPluginAuth.mockReturnValueOnce(true);
+
+      // Configure getAppConfig to return the expected config
+      getAppConfig.mockResolvedValueOnce({
+        filteredTools: [],
+        includedTools: [],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
-      expect(checkPluginAuth).toHaveBeenCalledWith(mockPlugin);
       const responseData = mockRes.json.mock.calls[0][0];
-      expect(responseData[0].authenticated).toBe(true);
+      // The real checkPluginAuth returns false for plugins without authConfig, so authenticated property is not added
+      expect(responseData[0].authenticated).toBeUndefined();
     });
 
     it('should return cached plugins when available', async () => {
@@ -111,8 +122,7 @@ describe('PluginController', () => {
 
       await getAvailablePluginsController(mockReq, mockRes);
 
-      expect(filterUniquePlugins).not.toHaveBeenCalled();
-      expect(checkPluginAuth).not.toHaveBeenCalled();
+      // When cache is hit, we return immediately without processing
       expect(mockRes.json).toHaveBeenCalledWith(cachedPlugins);
     });
 
@@ -122,10 +132,14 @@ describe('PluginController', () => {
         { name: 'Plugin2', pluginKey: 'key2', description: 'Second' },
       ];
 
-      mockReq.app.locals.includedTools = ['key1'];
+      require('~/app/clients/tools').availableTools.push(...mockPlugins);
       mockCache.get.mockResolvedValue(null);
-      filterUniquePlugins.mockReturnValue(mockPlugins);
-      checkPluginAuth.mockReturnValue(false);
+
+      // Configure getAppConfig to return config with includedTools
+      getAppConfig.mockResolvedValueOnce({
+        filteredTools: [],
+        includedTools: ['key1'],
+      });
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -136,73 +150,77 @@ describe('PluginController', () => {
   });
 
   describe('getAvailableTools', () => {
-    it('should use convertMCPToolsToPlugins for user-specific MCP tools', async () => {
+    it('should use filterUniquePlugins to deduplicate combined tools', async () => {
       const mockUserTools = {
-        [`tool1${Constants.mcp_delimiter}server1`]: {
-          function: { name: 'tool1', description: 'Tool 1' },
+        'user-tool': {
+          type: 'function',
+          function: {
+            name: 'user-tool',
+            description: 'User tool',
+            parameters: { type: 'object', properties: {} },
+          },
         },
       };
-      const mockConvertedPlugins = [
-        {
-          name: 'tool1',
-          pluginKey: `tool1${Constants.mcp_delimiter}server1`,
-          description: 'Tool 1',
-        },
-      ];
 
-      mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValueOnce(mockUserTools);
-      convertMCPToolsToPlugins.mockReturnValue(mockConvertedPlugins);
-      filterUniquePlugins.mockImplementation((plugins) => plugins);
-      getCustomConfig.mockResolvedValue(null);
-
-      await getAvailableTools(mockReq, mockRes);
-
-      expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
-        functionTools: mockUserTools,
-        customConfig: null,
-      });
-    });
-
-    it('should use filterUniquePlugins to deduplicate combined tools', async () => {
-      const mockUserPlugins = [
-        { name: 'UserTool', pluginKey: 'user-tool', description: 'User tool' },
-      ];
-      const mockManifestPlugins = [
+      const mockCachedPlugins = [
+        { name: 'user-tool', pluginKey: 'user-tool', description: 'Duplicate user tool' },
         { name: 'ManifestTool', pluginKey: 'manifest-tool', description: 'Manifest tool' },
       ];
 
-      mockCache.get.mockResolvedValue(mockManifestPlugins);
-      getCachedTools.mockResolvedValueOnce({});
-      convertMCPToolsToPlugins.mockReturnValue(mockUserPlugins);
-      filterUniquePlugins.mockReturnValue([...mockUserPlugins, ...mockManifestPlugins]);
-      getCustomConfig.mockResolvedValue(null);
+      mockCache.get.mockResolvedValue(mockCachedPlugins);
+      getCachedTools.mockResolvedValueOnce(mockUserTools);
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
 
       await getAvailableTools(mockReq, mockRes);
 
-      // Should be called to deduplicate the combined array
-      expect(filterUniquePlugins).toHaveBeenLastCalledWith([
-        ...mockUserPlugins,
-        ...mockManifestPlugins,
-      ]);
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const responseData = mockRes.json.mock.calls[0][0];
+      expect(Array.isArray(responseData)).toBe(true);
+      // The real filterUniquePlugins should have deduplicated tools with same pluginKey
+      const userToolCount = responseData.filter((tool) => tool.pluginKey === 'user-tool').length;
+      expect(userToolCount).toBe(1);
     });
 
     it('should use checkPluginAuth to verify authentication status', async () => {
-      const mockPlugin = { name: 'Tool1', pluginKey: 'tool1', description: 'Tool 1' };
+      // Add a plugin to availableTools that will be checked
+      const mockPlugin = {
+        name: 'Tool1',
+        pluginKey: 'tool1',
+        description: 'Tool 1',
+        // No authConfig means checkPluginAuth returns false
+      };
+
+      require('~/app/clients/tools').availableTools.push(mockPlugin);
 
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue({});
-      convertMCPToolsToPlugins.mockReturnValue([]);
-      filterUniquePlugins.mockReturnValue([mockPlugin]);
-      checkPluginAuth.mockReturnValue(true);
-      getCustomConfig.mockResolvedValue(null);
-
-      // Mock getCachedTools second call to return tool definitions
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({ tool1: true });
+      // getCachedTools returns the tool definitions
+      getCachedTools.mockResolvedValueOnce({
+        tool1: {
+          type: 'function',
+          function: {
+            name: 'tool1',
+            description: 'Tool 1',
+            parameters: {},
+          },
+        },
+      });
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
 
       await getAvailableTools(mockReq, mockRes);
 
-      expect(checkPluginAuth).toHaveBeenCalledWith(mockPlugin);
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const responseData = mockRes.json.mock.calls[0][0];
+      expect(Array.isArray(responseData)).toBe(true);
+      const tool = responseData.find((t) => t.pluginKey === 'tool1');
+      expect(tool).toBeDefined();
+      // The real checkPluginAuth returns false for plugins without authConfig, so authenticated property is not added
+      expect(tool.authenticated).toBeUndefined();
     });
 
     it('should use getToolkitKey for toolkit validation', async () => {
@@ -213,144 +231,43 @@ describe('PluginController', () => {
         toolkit: true,
       };
 
-      mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue({});
-      convertMCPToolsToPlugins.mockReturnValue([]);
-      filterUniquePlugins.mockReturnValue([mockToolkit]);
-      checkPluginAuth.mockReturnValue(false);
-      getToolkitKey.mockReturnValue('toolkit1');
-      getCustomConfig.mockResolvedValue(null);
+      require('~/app/clients/tools').availableTools.push(mockToolkit);
 
-      // Mock getCachedTools second call to return tool definitions
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({
-        toolkit1_function: true,
+      // Mock toolkits to have a mapping
+      require('~/app/clients/tools').toolkits.push({
+        name: 'Toolkit1',
+        pluginKey: 'toolkit1',
+        tools: ['toolkit1_function'],
       });
 
-      await getAvailableTools(mockReq, mockRes);
-
-      expect(getToolkitKey).toHaveBeenCalled();
-    });
-  });
-
-  describe('plugin.icon behavior', () => {
-    const callGetAvailableToolsWithMCPServer = async (mcpServers) => {
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue({ mcpServers });
-
-      const functionTools = {
-        [`test-tool${Constants.mcp_delimiter}test-server`]: {
-          function: { name: 'test-tool', description: 'A test tool' },
-        },
-      };
-
-      const mockConvertedPlugin = {
-        name: 'test-tool',
-        pluginKey: `test-tool${Constants.mcp_delimiter}test-server`,
-        description: 'A test tool',
-        icon: mcpServers['test-server']?.iconPath,
-        authenticated: true,
-        authConfig: [],
-      };
-
-      getCachedTools.mockResolvedValueOnce(functionTools);
-      convertMCPToolsToPlugins.mockReturnValue([mockConvertedPlugin]);
-      filterUniquePlugins.mockImplementation((plugins) => plugins);
-      checkPluginAuth.mockReturnValue(true);
-      getToolkitKey.mockReturnValue(undefined);
-
+      // getCachedTools returns the tool definitions
       getCachedTools.mockResolvedValueOnce({
-        [`test-tool${Constants.mcp_delimiter}test-server`]: true,
+        toolkit1_function: {
+          type: 'function',
+          function: {
+            name: 'toolkit1_function',
+            description: 'Toolkit function',
+            parameters: {},
+          },
+        },
       });
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
 
       await getAvailableTools(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(200);
       const responseData = mockRes.json.mock.calls[0][0];
-      return responseData.find((tool) => tool.name === 'test-tool');
-    };
-
-    it('should set plugin.icon when iconPath is defined', async () => {
-      const mcpServers = {
-        'test-server': {
-          iconPath: '/path/to/icon.png',
-        },
-      };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
-      expect(testTool.icon).toBe('/path/to/icon.png');
-    });
-
-    it('should set plugin.icon to undefined when iconPath is not defined', async () => {
-      const mcpServers = {
-        'test-server': {},
-      };
-      const testTool = await callGetAvailableToolsWithMCPServer(mcpServers);
-      expect(testTool.icon).toBeUndefined();
+      expect(Array.isArray(responseData)).toBe(true);
+      const toolkit = responseData.find((t) => t.pluginKey === 'toolkit1');
+      expect(toolkit).toBeDefined();
     });
   });
 
   describe('helper function integration', () => {
-    it('should properly handle MCP tools with custom user variables', async () => {
-      const customConfig = {
-        mcpServers: {
-          'test-server': {
-            customUserVars: {
-              API_KEY: { title: 'API Key', description: 'Your API key' },
-            },
-          },
-        },
-      };
-
-      // We need to test the actual flow where MCP manager tools are included
-      const mcpManagerTools = [
-        {
-          name: 'tool1',
-          pluginKey: `tool1${Constants.mcp_delimiter}test-server`,
-          description: 'Tool 1',
-          authenticated: true,
-        },
-      ];
-
-      // Mock the MCP manager to return tools
-      const mockMCPManager = {
-        loadManifestTools: jest.fn().mockResolvedValue(mcpManagerTools),
-      };
-      require('~/config').getMCPManager.mockReturnValue(mockMCPManager);
-
-      mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
-
-      // First call returns user tools (empty in this case)
-      getCachedTools.mockResolvedValueOnce({});
-
-      // Mock convertMCPToolsToPlugins to return empty array for user tools
-      convertMCPToolsToPlugins.mockReturnValue([]);
-
-      // Mock filterUniquePlugins to pass through
-      filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-
-      // Mock checkPluginAuth
-      checkPluginAuth.mockReturnValue(true);
-
-      // Second call returns tool definitions
-      getCachedTools.mockResolvedValueOnce({
-        [`tool1${Constants.mcp_delimiter}test-server`]: true,
-      });
-
-      await getAvailableTools(mockReq, mockRes);
-
-      const responseData = mockRes.json.mock.calls[0][0];
-
-      // Find the MCP tool in the response
-      const mcpTool = responseData.find(
-        (tool) => tool.pluginKey === `tool1${Constants.mcp_delimiter}test-server`,
-      );
-
-      // The actual implementation adds authConfig and sets authenticated to false when customUserVars exist
-      expect(mcpTool).toBeDefined();
-      expect(mcpTool.authConfig).toEqual([
-        { authField: 'API_KEY', label: 'API Key', description: 'Your API key' },
-      ]);
-      expect(mcpTool.authenticated).toBe(false);
-    });
-
     it('should handle error cases gracefully', async () => {
       mockCache.get.mockRejectedValue(new Error('Cache error'));
 
@@ -372,64 +289,47 @@ describe('PluginController', () => {
 
     it('should handle null cachedTools and cachedUserTools', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue(null);
-      convertMCPToolsToPlugins.mockReturnValue(undefined);
-      filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
+      // getCachedTools returns empty object instead of null
+      getCachedTools.mockResolvedValueOnce({});
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
 
       await getAvailableTools(mockReq, mockRes);
 
-      expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
-        functionTools: null,
-        customConfig: null,
-      });
+      // Should handle null values gracefully
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
     it('should handle when getCachedTools returns undefined', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue(undefined);
-      convertMCPToolsToPlugins.mockReturnValue(undefined);
-      filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
-      checkPluginAuth.mockReturnValue(false);
-
-      // Mock getCachedTools to return undefined for both calls
-      getCachedTools.mockReset();
-      getCachedTools.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined);
-
-      await getAvailableTools(mockReq, mockRes);
-
-      expect(convertMCPToolsToPlugins).toHaveBeenCalledWith({
-        functionTools: undefined,
-        customConfig: null,
-      });
-    });
-
-    it('should handle cachedToolsArray and userPlugins both being defined', async () => {
-      const cachedTools = [{ name: 'CachedTool', pluginKey: 'cached-tool', description: 'Cached' }];
-      const userTools = {
-        'user-tool': { function: { name: 'user-tool', description: 'User tool' } },
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
       };
-      const userPlugins = [{ name: 'UserTool', pluginKey: 'user-tool', description: 'User tool' }];
 
-      mockCache.get.mockResolvedValue(cachedTools);
-      getCachedTools.mockResolvedValue(userTools);
-      convertMCPToolsToPlugins.mockReturnValue(userPlugins);
-      filterUniquePlugins.mockReturnValue([...userPlugins, ...cachedTools]);
+      // Mock getCachedTools to return undefined
+      getCachedTools.mockReset();
+      getCachedTools.mockResolvedValueOnce(undefined);
 
       await getAvailableTools(mockReq, mockRes);
 
+      // Should handle undefined values gracefully
       expect(mockRes.status).toHaveBeenCalledWith(200);
-      expect(mockRes.json).toHaveBeenCalledWith([...userPlugins, ...cachedTools]);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
     it('should handle empty toolDefinitions object', async () => {
       mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce({});
-      convertMCPToolsToPlugins.mockReturnValue([]);
-      filterUniquePlugins.mockImplementation((plugins) => plugins || []);
-      getCustomConfig.mockResolvedValue(null);
-      checkPluginAuth.mockReturnValue(true);
+      // Reset getCachedTools to ensure clean state
+      getCachedTools.mockReset();
+      getCachedTools.mockResolvedValue({});
+      mockReq.config = {}; // No mcpConfig at all
+
+      // Ensure no plugins are available
+      require('~/app/clients/tools').availableTools.length = 0;
 
       await getAvailableTools(mockReq, mockRes);
 
@@ -437,54 +337,13 @@ describe('PluginController', () => {
       expect(mockRes.json).toHaveBeenCalledWith([]);
     });
 
-    it('should handle MCP tools without customUserVars', async () => {
-      const customConfig = {
-        mcpServers: {
-          'test-server': {
-            // No customUserVars defined
-          },
-        },
-      };
-
-      const mockUserTools = {
-        [`tool1${Constants.mcp_delimiter}test-server`]: {
-          function: { name: 'tool1', description: 'Tool 1' },
-        },
-      };
-
+    it('should handle undefined filteredTools and includedTools', async () => {
+      mockReq.config = {};
       mockCache.get.mockResolvedValue(null);
-      getCustomConfig.mockResolvedValue(customConfig);
-      getCachedTools.mockResolvedValueOnce(mockUserTools);
 
-      const mockPlugin = {
-        name: 'tool1',
-        pluginKey: `tool1${Constants.mcp_delimiter}test-server`,
-        description: 'Tool 1',
-        authenticated: true,
-        authConfig: [],
-      };
-
-      convertMCPToolsToPlugins.mockReturnValue([mockPlugin]);
-      filterUniquePlugins.mockImplementation((plugins) => plugins);
-      checkPluginAuth.mockReturnValue(true);
-
-      getCachedTools.mockResolvedValueOnce({
-        [`tool1${Constants.mcp_delimiter}test-server`]: true,
-      });
-
-      await getAvailableTools(mockReq, mockRes);
-
-      const responseData = mockRes.json.mock.calls[0][0];
-      expect(responseData[0].authenticated).toBe(true);
-      // The actual implementation doesn't set authConfig on tools without customUserVars
-      expect(responseData[0].authConfig).toEqual([]);
-    });
-
-    it('should handle req.app.locals with undefined filteredTools and includedTools', async () => {
-      mockReq.app = { locals: {} };
-      mockCache.get.mockResolvedValue(null);
-      filterUniquePlugins.mockReturnValue([]);
-      checkPluginAuth.mockReturnValue(false);
+      // Configure getAppConfig to return config with undefined properties
+      // The controller will use default values [] for filteredTools and includedTools
+      getAppConfig.mockResolvedValueOnce({});
 
       await getAvailablePluginsController(mockReq, mockRes);
 
@@ -500,21 +359,135 @@ describe('PluginController', () => {
         toolkit: true,
       };
 
-      mockCache.get.mockResolvedValue(null);
-      getCachedTools.mockResolvedValue({});
-      convertMCPToolsToPlugins.mockReturnValue([]);
-      filterUniquePlugins.mockReturnValue([mockToolkit]);
-      checkPluginAuth.mockReturnValue(false);
-      getToolkitKey.mockReturnValue(undefined);
-      getCustomConfig.mockResolvedValue(null);
+      // No need to mock app.locals anymore as it's not used
 
-      // Mock getCachedTools second call to return null
-      getCachedTools.mockResolvedValueOnce({}).mockResolvedValueOnce(null);
+      // Add the toolkit to availableTools
+      require('~/app/clients/tools').availableTools.push(mockToolkit);
+
+      mockCache.get.mockResolvedValue(null);
+      // getCachedTools returns empty object to avoid null reference error
+      getCachedTools.mockResolvedValueOnce({});
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
 
       await getAvailableTools(mockReq, mockRes);
 
       // Should handle null toolDefinitions gracefully
       expect(mockRes.status).toHaveBeenCalledWith(200);
+    });
+
+    it('should handle undefined toolDefinitions when checking isToolDefined (traversaal_search bug)', async () => {
+      // This test reproduces the bug where toolDefinitions is undefined
+      // and accessing toolDefinitions[plugin.pluginKey] causes a TypeError
+      const mockPlugin = {
+        name: 'Traversaal Search',
+        pluginKey: 'traversaal_search',
+        description: 'Search plugin',
+      };
+
+      // Add the plugin to availableTools
+      require('~/app/clients/tools').availableTools.push(mockPlugin);
+
+      mockCache.get.mockResolvedValue(null);
+
+      mockReq.config = {
+        mcpConfig: null,
+        paths: { structuredTools: '/mock/path' },
+      };
+
+      // CRITICAL: getCachedTools returns undefined
+      // This is what causes the bug when trying to access toolDefinitions[plugin.pluginKey]
+      getCachedTools.mockResolvedValueOnce(undefined);
+
+      // This should not throw an error with the optional chaining fix
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should handle undefined toolDefinitions gracefully and return empty array
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
+    });
+
+    it('should re-initialize tools from appConfig when cache returns null', async () => {
+      // Setup: Initial state with tools in appConfig
+      const mockAppTools = {
+        tool1: {
+          type: 'function',
+          function: {
+            name: 'tool1',
+            description: 'Tool 1',
+            parameters: {},
+          },
+        },
+        tool2: {
+          type: 'function',
+          function: {
+            name: 'tool2',
+            description: 'Tool 2',
+            parameters: {},
+          },
+        },
+      };
+
+      // Add matching plugins to availableTools
+      require('~/app/clients/tools').availableTools.push(
+        { name: 'Tool 1', pluginKey: 'tool1', description: 'Tool 1' },
+        { name: 'Tool 2', pluginKey: 'tool2', description: 'Tool 2' },
+      );
+
+      // Simulate cache cleared state (returns null)
+      mockCache.get.mockResolvedValue(null);
+      getCachedTools.mockResolvedValueOnce(null); // Global tools (cache cleared)
+
+      mockReq.config = {
+        filteredTools: [],
+        includedTools: [],
+        availableTools: mockAppTools,
+      };
+
+      // Mock setCachedTools to verify it's called to re-initialize
+      const { setCachedTools } = require('~/server/services/Config');
+
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should have re-initialized the cache with tools from appConfig
+      expect(setCachedTools).toHaveBeenCalledWith(mockAppTools);
+
+      // Should still return tools successfully
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      const responseData = mockRes.json.mock.calls[0][0];
+      expect(responseData).toHaveLength(2);
+      expect(responseData.find((t) => t.pluginKey === 'tool1')).toBeDefined();
+      expect(responseData.find((t) => t.pluginKey === 'tool2')).toBeDefined();
+    });
+
+    it('should handle cache clear without appConfig.availableTools gracefully', async () => {
+      // Setup: appConfig without availableTools
+      getAppConfig.mockResolvedValue({
+        filteredTools: [],
+        includedTools: [],
+        // No availableTools property
+      });
+
+      // Clear availableTools array
+      require('~/app/clients/tools').availableTools.length = 0;
+
+      // Cache returns null (cleared state)
+      mockCache.get.mockResolvedValue(null);
+      getCachedTools.mockResolvedValueOnce(null); // Global tools (cache cleared)
+
+      mockReq.config = {
+        filteredTools: [],
+        includedTools: [],
+        // No availableTools
+      };
+
+      await getAvailableTools(mockReq, mockRes);
+
+      // Should handle gracefully without crashing
+      expect(mockRes.status).toHaveBeenCalledWith(200);
+      expect(mockRes.json).toHaveBeenCalledWith([]);
     });
   });
 });

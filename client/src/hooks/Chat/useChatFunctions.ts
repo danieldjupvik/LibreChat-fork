@@ -6,6 +6,7 @@ import {
   QueryKeys,
   ContentTypes,
   EModelEndpoint,
+  getEndpointField,
   isAgentsEndpoint,
   parseCompactConvo,
   replaceSpecialVars,
@@ -25,10 +26,10 @@ import type { TAskFunction, ExtendedFile } from '~/common';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import store, { useGetEphemeralAgent } from '~/store';
-import { getEndpointField, logger } from '~/utils';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks';
+import { logger } from '~/utils';
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
@@ -167,6 +168,7 @@ export default function useChatFunctions({
 
     const endpointsConfig = queryClient.getQueryData<TEndpointsConfig>([QueryKeys.endpoints]);
     const endpointType = getEndpointField(endpointsConfig, endpoint, 'type');
+    const iconURL = conversation?.iconURL;
 
     /** This becomes part of the `endpointOption` */
     const convo = parseCompactConvo({
@@ -230,22 +232,26 @@ export default function useChatFunctions({
 
     const responseMessageId =
       editedMessageId ??
-      (latestMessage?.messageId && isRegenerate ? latestMessage?.messageId + '_' : null) ??
+      (latestMessage?.messageId && isRegenerate
+        ? latestMessage.messageId.replace(/_+$/, '') + '_'
+        : null) ??
       null;
+    const initialResponseId =
+      responseMessageId ?? `${isRegenerate ? messageId : intermediateId}`.replace(/_+$/, '') + '_';
 
     const initialResponse: TMessage = {
       sender: responseSender,
       text: '',
       endpoint: endpoint ?? '',
       parentMessageId: isRegenerate ? messageId : intermediateId,
-      messageId: responseMessageId ?? `${isRegenerate ? messageId : intermediateId}_`,
+      messageId: initialResponseId,
       thread_id,
       conversationId,
       unfinished: false,
       isCreatedByUser: false,
-      iconURL: convo?.iconURL,
       model: convo?.model,
       error: false,
+      iconURL,
     };
 
     if (isAssistantsEndpoint(endpoint)) {
@@ -267,13 +273,13 @@ export default function useChatFunctions({
 
       if (editedContent && latestMessage?.content) {
         initialResponse.content = cloneDeep(latestMessage.content);
-        const { index, text, type } = editedContent;
+        const { index, type, ...part } = editedContent;
         if (initialResponse.content && index >= 0 && index < initialResponse.content.length) {
           const contentPart = initialResponse.content[index];
           if (type === ContentTypes.THINK && contentPart.type === ContentTypes.THINK) {
-            contentPart[ContentTypes.THINK] = text;
+            contentPart[ContentTypes.THINK] = part[ContentTypes.THINK];
           } else if (type === ContentTypes.TEXT && contentPart.type === ContentTypes.TEXT) {
-            contentPart[ContentTypes.TEXT] = text;
+            contentPart[ContentTypes.TEXT] = part[ContentTypes.TEXT];
           }
         }
       } else {

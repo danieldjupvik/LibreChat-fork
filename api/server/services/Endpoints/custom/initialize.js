@@ -1,3 +1,4 @@
+const { isUserProvided, getOpenAIConfig, getCustomEndpointConfig } = require('@librechat/api');
 const {
   CacheKeys,
   ErrorTypes,
@@ -5,30 +6,28 @@ const {
   FetchTokenConfig,
   extractEnvVariable,
 } = require('librechat-data-provider');
-const { Providers } = require('@librechat/agents');
-const { getOpenAIConfig, createHandleLLMNewToken, resolveHeaders } = require('@librechat/api');
 const { getUserKeyValues, checkUserKeyExpiry } = require('~/server/services/UserService');
-const { getCustomEndpointConfig } = require('~/server/services/Config');
 const { fetchModels } = require('~/server/services/ModelService');
 const OpenAIClient = require('~/app/clients/OpenAIClient');
-const { isUserProvided } = require('~/server/utils');
 const getLogStores = require('~/cache/getLogStores');
 
 const { PROXY } = process.env;
 
 const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrideEndpoint }) => {
+  const appConfig = req.config;
   const { key: expiresAt } = req.body;
   const endpoint = overrideEndpoint ?? req.body.endpoint;
 
-  const endpointConfig = await getCustomEndpointConfig(endpoint);
+  const endpointConfig = getCustomEndpointConfig({
+    endpoint,
+    appConfig,
+  });
   if (!endpointConfig) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
   const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey);
   const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL);
-
-  let resolvedHeaders = resolveHeaders(endpointConfig.headers, req.user);
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
@@ -96,7 +95,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
   }
 
   const customOptions = {
-    headers: resolvedHeaders,
+    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -113,8 +112,7 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
     endpointTokenConfig,
   };
 
-  /** @type {undefined | TBaseEndpoint} */
-  const allConfig = req.app.locals.all;
+  const allConfig = appConfig.endpoints?.all;
   if (allConfig) {
     customOptions.streamRate = allConfig.streamRate;
   }
@@ -130,39 +128,23 @@ const initializeClient = async ({ req, res, endpointOption, optionsOnly, overrid
 
   if (optionsOnly) {
     const modelOptions = endpointOption?.model_parameters ?? {};
-    if (endpoint !== Providers.OLLAMA) {
-      clientOptions = Object.assign(
-        {
-          modelOptions,
-        },
-        clientOptions,
-      );
-      clientOptions.modelOptions.user = req.user.id;
-      const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
-      if (options != null) {
-        options.useLegacyContent = true;
-        options.endpointTokenConfig = endpointTokenConfig;
-      }
-      if (!clientOptions.streamRate) {
-        return options;
-      }
-      options.llmConfig.callbacks = [
-        {
-          handleLLMNewToken: createHandleLLMNewToken(clientOptions.streamRate),
-        },
-      ];
+    clientOptions = Object.assign(
+      {
+        modelOptions,
+      },
+      clientOptions,
+    );
+    clientOptions.modelOptions.user = req.user.id;
+    const options = getOpenAIConfig(apiKey, clientOptions, endpoint);
+    if (options != null) {
+      options.useLegacyContent = true;
+      options.endpointTokenConfig = endpointTokenConfig;
+    }
+    if (!clientOptions.streamRate) {
       return options;
     }
-
-    if (clientOptions.reverseProxyUrl) {
-      modelOptions.baseUrl = clientOptions.reverseProxyUrl.split('/v1')[0];
-      delete clientOptions.reverseProxyUrl;
-    }
-
-    return {
-      useLegacyContent: true,
-      llmConfig: modelOptions,
-    };
+    options.llmConfig._lc_stream_delay = clientOptions.streamRate;
+    return options;
   }
 
   const client = new OpenAIClient(apiKey, clientOptions);

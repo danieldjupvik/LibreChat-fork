@@ -6,7 +6,6 @@ import { useNavScrolling, useLocalize, useAuthContext } from '~/hooks';
 import SearchMessage from '~/components/Chat/Messages/SearchMessage';
 import { useMessagesInfiniteQuery } from '~/data-provider';
 import { useFileMapContext } from '~/Providers';
-import { buildTree } from '~/utils';
 import store from '~/store';
 
 export default function Search() {
@@ -43,9 +42,20 @@ export default function Search() {
   });
 
   const messages = useMemo(() => {
-    const msgs = searchMessages?.pages.flatMap((page) => page.messages) || [];
-    const dataTree = buildTree({ messages: msgs, fileMap });
-    return dataTree?.length === 0 ? null : (dataTree ?? null);
+    const msgs =
+      searchMessages?.pages.flatMap((page) =>
+        page.messages.map((message) => {
+          if (!message.files || !fileMap) {
+            return message;
+          }
+          return {
+            ...message,
+            files: message.files.map((file) => fileMap[file.file_id ?? ''] ?? file),
+          };
+        }),
+      ) || [];
+
+    return msgs.length === 0 ? null : msgs;
   }, [fileMap, searchMessages?.pages]);
 
   useEffect(() => {

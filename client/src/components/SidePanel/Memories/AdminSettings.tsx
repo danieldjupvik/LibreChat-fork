@@ -39,6 +39,7 @@ const LabelController: React.FC<LabelControllerProps> = ({ control, memoryPerm, 
           checked={field.value}
           onCheckedChange={field.onChange}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />
@@ -141,12 +142,13 @@ const AdminSettings = () => {
           size={'sm'}
           variant={'outline'}
           className="btn btn-neutral border-token-border-light relative h-9 w-full gap-1 rounded-lg font-medium"
+          aria-label={localize('com_ui_admin_settings')}
         >
           <ShieldEllipsis className="cursor-pointer" aria-hidden="true" />
           {localize('com_ui_admin_settings')}
         </Button>
       </OGDialogTrigger>
-      <OGDialogContent className="w-1/4 border-border-light bg-surface-primary text-text-primary">
+      <OGDialogContent className="border-border-light bg-surface-primary text-text-primary lg:w-1/4">
         <OGDialogTitle>{`${localize('com_ui_admin_settings')} - ${localize(
           'com_ui_memories',
         )}`}</OGDialogTitle>

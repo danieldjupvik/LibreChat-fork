@@ -31,6 +31,57 @@ export enum EModelEndpoint {
   gptPlugins = 'gptPlugins',
 }
 
+/** Mirrors `@librechat/agents` providers */
+export enum Providers {
+  OPENAI = 'openAI',
+  ANTHROPIC = 'anthropic',
+  AZURE = 'azureOpenAI',
+  GOOGLE = 'google',
+  VERTEXAI = 'vertexai',
+  BEDROCK = 'bedrock',
+  MISTRALAI = 'mistralai',
+  MISTRAL = 'mistral',
+  DEEPSEEK = 'deepseek',
+  OPENROUTER = 'openrouter',
+  XAI = 'xai',
+}
+
+/**
+ * Endpoints that support direct PDF processing in the agent system
+ */
+export const documentSupportedProviders = new Set<string>([
+  EModelEndpoint.anthropic,
+  EModelEndpoint.openAI,
+  EModelEndpoint.custom,
+  EModelEndpoint.azureOpenAI,
+  EModelEndpoint.google,
+  Providers.VERTEXAI,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+const openAILikeProviders = new Set<string>([
+  Providers.OPENAI,
+  Providers.AZURE,
+  EModelEndpoint.custom,
+  Providers.MISTRALAI,
+  Providers.MISTRAL,
+  Providers.DEEPSEEK,
+  Providers.OPENROUTER,
+  Providers.XAI,
+]);
+
+export const isOpenAILikeProvider = (provider?: string | null): boolean => {
+  return openAILikeProviders.has(provider ?? '');
+};
+
+export const isDocumentSupportedProvider = (provider?: string | null): boolean => {
+  return documentSupportedProviders.has(provider ?? '');
+};
+
 export const paramEndpoints = new Set<EModelEndpoint | string>([
   EModelEndpoint.agents,
   EModelEndpoint.openAI,
@@ -112,7 +163,8 @@ export enum ImageDetail {
 }
 
 export enum ReasoningEffort {
-  none = '',
+  unset = '',
+  none = 'none',
   minimal = 'minimal',
   low = 'low',
   medium = 'medium',
@@ -176,12 +228,19 @@ export const defaultAgentFormValues = {
   tools: [],
   provider: {},
   projectIds: [],
+  edges: [],
   artifacts: '',
+  /** @deprecated Use ACL permissions instead */
   isCollaborative: false,
   recursion_limit: undefined,
   [Tools.execute_code]: false,
   [Tools.file_search]: false,
   [Tools.web_search]: false,
+  category: 'general',
+  support_contact: {
+    name: '',
+    email: '',
+  },
 };
 
 export const ImageVisionTool: FunctionTool = {
@@ -278,7 +337,7 @@ export const googleSettings = {
   },
   thinkingBudget: {
     min: -1 as const,
-    max: 32768 as const,
+    max: 32000 as const,
     step: 1 as const,
     /** `-1` = Dynamic Thinking, meaning the model will adjust
      * the budget based on the complexity of the request.
@@ -288,6 +347,8 @@ export const googleSettings = {
 };
 
 const ANTHROPIC_MAX_OUTPUT = 128000 as const;
+const CLAUDE_4_64K_MAX_OUTPUT = 64000 as const;
+const CLAUDE_32K_MAX_OUTPUT = 32000 as const;
 const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 export const anthropicSettings = {
@@ -318,18 +379,38 @@ export const anthropicSettings = {
     step: 1 as const,
     default: DEFAULT_MAX_OUTPUT,
     reset: (modelName: string) => {
-      if (/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) {
-        return DEFAULT_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
       }
 
-      return 4096;
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
+      if (/claude-opus[-.]?[4-9]/.test(modelName)) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      return DEFAULT_MAX_OUTPUT;
     },
     set: (value: number, modelName: string) => {
-      if (
-        !(/claude-3[-.]5-sonnet/.test(modelName) || /claude-3[-.]7/.test(modelName)) &&
-        value > LEGACY_ANTHROPIC_MAX_OUTPUT
-      ) {
-        return LEGACY_ANTHROPIC_MAX_OUTPUT;
+      if (/claude-(?:sonnet|haiku)[-.]?[4-9]/.test(modelName) && value > CLAUDE_4_64K_MAX_OUTPUT) {
+        return CLAUDE_4_64K_MAX_OUTPUT;
+      }
+
+      if (/claude-opus[-.]?(?:[5-9]|4[-.]?([5-9]|\d{2,}))/.test(modelName)) {
+        if (value > CLAUDE_4_64K_MAX_OUTPUT) {
+          return CLAUDE_4_64K_MAX_OUTPUT;
+        }
+        return value;
+      }
+
+      if (/claude-opus[-.]?[4-9]/.test(modelName) && value > CLAUDE_32K_MAX_OUTPUT) {
+        return CLAUDE_32K_MAX_OUTPUT;
+      }
+
+      if (value > ANTHROPIC_MAX_OUTPUT) {
+        return ANTHROPIC_MAX_OUTPUT;
       }
 
       return value;
@@ -537,6 +618,8 @@ export const tMessageSchema = z.object({
   /* frontend components */
   iconURL: z.string().nullable().optional(),
   feedback: feedbackSchema.optional(),
+  /** metadata */
+  metadata: z.record(z.unknown()).optional(),
 });
 
 export type MemoryArtifact = {
@@ -546,19 +629,33 @@ export type MemoryArtifact = {
   type: 'update' | 'delete' | 'error';
 };
 
+export type UIResource = {
+  type?: string;
+  data?: unknown;
+  uri?: string;
+  mimeType?: string;
+  text?: string;
+  [key: string]: unknown;
+};
+
 export type TAttachmentMetadata = {
   type?: Tools;
   messageId: string;
   toolCallId: string;
-  [Tools.web_search]?: SearchResultData;
   [Tools.memory]?: MemoryArtifact;
+  [Tools.ui_resources]?: UIResource[];
+  [Tools.web_search]?: SearchResultData;
+  [Tools.file_search]?: SearchResultData;
 };
 
 export type TAttachment =
   | (TFile & TAttachmentMetadata)
   | (Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
       expiresAt: number;
-    } & TAttachmentMetadata);
+    } & TAttachmentMetadata)
+  | (Partial<Pick<TFile, 'filename' | 'filepath'>> &
+      Pick<TFile, 'conversationId'> &
+      TAttachmentMetadata);
 
 export type TMessage = z.input<typeof tMessageSchema> & {
   children?: TMessage[];
@@ -612,14 +709,14 @@ export const tConversationSchema = z.object({
   userLabel: z.string().optional(),
   model: z.string().nullable().optional(),
   promptPrefix: z.string().nullable().optional(),
-  temperature: z.number().optional(),
+  temperature: z.number().nullable().optional(),
   topP: z.number().optional(),
   topK: z.number().optional(),
   top_p: z.number().optional(),
   frequency_penalty: z.number().optional(),
   presence_penalty: z.number().optional(),
   parentMessageId: z.string().optional(),
-  maxOutputTokens: coerceNumber.optional(),
+  maxOutputTokens: coerceNumber.nullable().optional(),
   maxContextTokens: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
@@ -627,6 +724,7 @@ export const tConversationSchema = z.object({
   system: z.string().optional(),
   thinking: z.boolean().optional(),
   thinkingBudget: coerceNumber.optional(),
+  stream: z.boolean().optional(),
   /* artifacts */
   artifacts: z.string().optional(),
   /* google */
@@ -673,6 +771,8 @@ export const tConversationSchema = z.object({
   iconURL: z.string().nullable().optional(),
   /* temporary chat */
   expiredAt: z.string().nullable().optional(),
+  /* file token limits */
+  fileTokenLimit: coerceNumber.optional(),
   /** @deprecated */
   resendImages: z.boolean().optional(),
   /** @deprecated */
@@ -787,6 +887,8 @@ export const tQueryParamsSchema = tConversationSchema
      * https://platform.openai.com/docs/api-reference/runs/createRun#runs-createrun-instructions
      * */
     instructions: true,
+    /** @endpoints openAI, google, anthropic */
+    fileTokenLimit: true,
   })
   .merge(
     z.object({
@@ -843,6 +945,7 @@ export const googleBaseSchema = tConversationSchema.pick({
   thinking: true,
   thinkingBudget: true,
   web_search: true,
+  fileTokenLimit: true,
   iconURL: true,
   greeting: true,
   spec: true,
@@ -1094,6 +1197,7 @@ export const openAIBaseSchema = tConversationSchema.pick({
   useResponsesApi: true,
   web_search: true,
   disableStreaming: true,
+  fileTokenLimit: true,
 });
 
 export const openAISchema = openAIBaseSchema
@@ -1138,6 +1242,9 @@ export const anthropicBaseSchema = tConversationSchema.pick({
   spec: true,
   maxContextTokens: true,
   web_search: true,
+  fileTokenLimit: true,
+  stop: true,
+  stream: true,
 });
 
 export const anthropicSchema = anthropicBaseSchema

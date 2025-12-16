@@ -62,6 +62,7 @@ export default function useSSE(
   } = chatHelpers;
 
   const {
+    clearStepMaps,
     stepHandler,
     syncHandler,
     finalHandler,
@@ -101,6 +102,7 @@ export default function useSSE(
     payload = removeNullishValues(payload) as TPayload;
 
     let textIndex = null;
+    clearStepMaps();
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
@@ -122,7 +124,13 @@ export default function useSSE(
       if (data.final != null) {
         clearDraft(submission.conversation?.conversationId);
         const { plugins } = data;
-        finalHandler(data, { ...submission, plugins } as EventSubmission);
+        try {
+          finalHandler(data, { ...submission, plugins } as EventSubmission);
+        } catch (error) {
+          console.error('Error in finalHandler:', error);
+          setIsSubmitting(false);
+          setShowStopButton(false);
+        }
         (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
         console.log('final', data);
         return;
@@ -185,14 +193,20 @@ export default function useSSE(
       setCompleted((prev) => new Set(prev.add(streamKey)));
       const latestMessages = getMessages();
       const conversationId = latestMessages?.[latestMessages.length - 1]?.conversationId;
-      return await abortConversation(
-        conversationId ??
-          userMessage.conversationId ??
-          submission.conversation?.conversationId ??
-          '',
-        submission as EventSubmission,
-        latestMessages,
-      );
+      try {
+        await abortConversation(
+          conversationId ??
+            userMessage.conversationId ??
+            submission.conversation?.conversationId ??
+            '',
+          submission as EventSubmission,
+          latestMessages,
+        );
+      } catch (error) {
+        console.error('Error during abort:', error);
+        setIsSubmitting(false);
+        setShowStopButton(false);
+      }
     });
 
     sse.addEventListener('error', async (e: MessageEvent) => {

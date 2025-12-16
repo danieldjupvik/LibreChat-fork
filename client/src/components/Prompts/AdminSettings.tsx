@@ -53,6 +53,7 @@ const LabelController: React.FC<LabelControllerProps> = ({
             }
           }}
           value={field.value.toString()}
+          aria-label={label}
         />
       )}
     />
@@ -109,7 +110,7 @@ const AdminSettings = () => {
   const labelControllerData = [
     {
       promptPerm: Permissions.SHARED_GLOBAL,
-      label: localize('com_ui_prompts_allow_share_global'),
+      label: localize('com_ui_prompts_allow_share'),
     },
     {
       promptPerm: Permissions.CREATE,
@@ -153,7 +154,7 @@ const AdminSettings = () => {
             <span className="hidden sm:flex">{localize('com_ui_admin')}</span>
           </Button>
         </OGDialogTrigger>
-        <OGDialogContent className="w-11/12 max-w-lg border-border-light bg-surface-primary text-text-primary">
+        <OGDialogContent className="max-w-lg border-border-light bg-surface-primary text-text-primary lg:w-1/4">
           <OGDialogTitle>
             {`${localize('com_ui_admin_settings')} - ${localize('com_ui_prompts')}`}
           </OGDialogTitle>
@@ -216,7 +217,12 @@ const AdminSettings = () => {
                 ))}
               </div>
               <div className="flex justify-end">
-                <Button type="submit" disabled={isSubmitting || isLoading} variant="submit">
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || isLoading}
+                  variant="submit"
+                  aria-label={localize('com_ui_save')}
+                >
                   {localize('com_ui_save')}
                 </Button>
               </div>
