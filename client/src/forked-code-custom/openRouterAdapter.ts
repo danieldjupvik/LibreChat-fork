@@ -39,8 +39,12 @@ const log = (...args: unknown[]) => {
 // ───────────────────────────────────────────────────────────
 //  Timeout‑aware fetch with retry
 // ───────────────────────────────────────────────────────────
-interface FetchOptions extends RequestInit {
+interface FetchOptions {
   timeoutMs?: number;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  signal?: AbortSignal;
 }
 
 const timeoutFetch = async (
