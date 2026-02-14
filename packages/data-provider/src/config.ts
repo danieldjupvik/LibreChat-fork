@@ -1758,6 +1758,8 @@ export enum Constants {
   mcp_all = 'sys__all__sys',
   /** Unique value to indicate clearing MCP servers from UI state. For frontend use only. */
   mcp_clear = 'sys__clear__sys',
+  /** Key suffix for non-spec user default tool storage */
+  spec_defaults_key = '__defaults__',
   /**
    * Unique value to indicate the MCP tool was added to an agent.
    * This helps inform the UI if the mcp server was previously added.
@@ -1907,4 +1909,15 @@ export function getEndpointField<
     return undefined;
   }
   return config[property];
+}
+
+/** Resolves the `defaultParamsEndpoint` for a given endpoint from its custom params config */
+export function getDefaultParamsEndpoint(
+  endpointsConfig: TEndpointsConfig | undefined | null,
+  endpoint: string | null | undefined,
+): string | undefined {
+  if (!endpointsConfig || !endpoint) {
+    return undefined;
+  }
+  return endpointsConfig[endpoint]?.customParams?.defaultParamsEndpoint;
 }
