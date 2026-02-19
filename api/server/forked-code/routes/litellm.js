@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { logger } = require('../../../config');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 /**
  * Proxy endpoint to fetch model information from LiteLLM
@@ -10,7 +11,7 @@ const { logger } = require('../../../config');
  * @route GET /api/forked/litellm/model-info
  * @returns {object} Model information including pricing and context windows
  */
-router.get('/model-info', async (req, res) => {
+router.get('/model-info', requireJwtAuth, async (req, res) => {
   try {
     const apiKey = process.env.LITELLM_API_KEY;
 
@@ -70,7 +71,7 @@ router.get('/model-info', async (req, res) => {
  * @route GET /api/forked/litellm/cost-margin
  * @returns {object} { margin: number } — global margin as a decimal (e.g. 0.15 = 15%)
  */
-router.get('/cost-margin', async (req, res) => {
+router.get('/cost-margin', requireJwtAuth, async (req, res) => {
   try {
     const apiKey = process.env.LITELLM_API_KEY;
 
@@ -87,8 +88,9 @@ router.get('/cost-margin', async (req, res) => {
       timeout: 5000,
     });
 
-    const global = response.data?.values?.global;
-    const margin = typeof global === 'number' && Number.isFinite(global) ? global : 0;
+    const globalMargin = response.data?.values?.global;
+    const margin =
+      typeof globalMargin === 'number' && Number.isFinite(globalMargin) ? globalMargin : 0;
 
     res.setHeader('Cache-Control', 'public, max-age=3600');
     return res.json({ margin });
