@@ -13,6 +13,7 @@ const toNonNegativeNumber = (value) => {
 };
 
 const toOptionalNumber = (value) => {
+  if (value == null) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 };
@@ -20,6 +21,7 @@ const toOptionalNumber = (value) => {
 const getReasoningTokens = (usage) =>
   toPositiveNumber(
     usage?.reasoning_tokens ??
+      usage?.output_token_details?.reasoning ??
       usage?.output_token_details?.reasoning_tokens ??
       usage?.completion_tokens_details?.reasoning_tokens ??
       usage?.usage?.completion_tokens_details?.reasoning_tokens,

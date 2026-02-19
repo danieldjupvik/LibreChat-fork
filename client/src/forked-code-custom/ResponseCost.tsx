@@ -243,7 +243,7 @@ const buildBreakdownFromRates = ({
 
   const inputRate = toNonNegativeNumber(rates.input_cost_per_token);
   const outputRate = toNonNegativeNumber(rates.output_cost_per_token);
-  const reasoningRate = toNonNegativeNumber(rates.output_cost_per_reasoning_token ?? outputRate);
+  const reasoningRate = toNonNegativeNumber(rates.output_cost_per_reasoning_token || outputRate);
 
   const inputCost = inputTokens * inputRate;
   const outputCost = effectiveOutputTokens * outputRate;
@@ -327,7 +327,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
   const [displayCurrencyPreference, setDisplayCurrencyPreference] =
-    useState<SupportedCurrency>('NOK');
+    useState<SupportedCurrency>('USD');
   const [usdToNokRate, setUsdToNokRate] = useState<number | null>(null);
   const calculationComplete = useRef(false);
   const { data: startupConfig } = useGetStartupConfig();
@@ -808,7 +808,9 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             </div>
             <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
               <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.outputTokens}</div>
-              <div className="font-mono text-sm">{formatTokens(breakdown.outputTokens)}</div>
+              <div className="font-mono text-sm">
+                {formatTokens(breakdown.reasoningTokens > 0 ? breakdown.effectiveOutputTokens : breakdown.outputTokens)}
+              </div>
             </div>
             <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
               <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.reasoning}</div>
