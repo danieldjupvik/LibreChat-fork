@@ -55,7 +55,6 @@ interface MessageWithTokens extends TMessage {
 
 type CostBreakdown = {
   model?: string;
-  modelLabel?: string;
   currency: string;
   lockedRates: boolean;
   inputTokens: number;
@@ -509,10 +508,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             usage: usage.snapshot,
           });
           if (snapshotBreakdown && isMounted) {
-            setBreakdown({
-              ...snapshotBreakdown,
-              modelLabel: getFriendlyModelName(snapshotBreakdown.model),
-            });
+            setBreakdown(snapshotBreakdown);
             calculationComplete.current = true;
             return;
           }
@@ -550,10 +546,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
         });
 
         if (isMounted && fallbackBreakdown.totalCost > 0) {
-          setBreakdown({
-            ...fallbackBreakdown,
-            modelLabel: getFriendlyModelName(fallbackBreakdown.model),
-          });
+          setBreakdown(fallbackBreakdown);
         }
       } catch (error) {
         console.error('Error calculating response cost:', error);
@@ -577,8 +570,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     shouldShowCost,
     getMessageModel,
     getTokenUsage,
-    getFriendlyModelName,
   ]);
+
+  const modelLabel = useMemo(
+    () => getFriendlyModelName(breakdown?.model),
+    [breakdown?.model, getFriendlyModelName],
+  );
 
   const rows = useMemo(() => {
     if (!breakdown) {
@@ -725,24 +722,20 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
   return (
     <>
-      <button
-        className={cn(
-          'ml-0 flex items-center gap-1.5 rounded-md p-1 text-sm hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
-          !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
-        )}
-        type="button"
-        aria-label={tooltipText}
-        onClick={() => setIsDialogOpen(true)}
-      >
-        <TooltipAnchor
-          description={tooltipText}
-          side="top"
-          className="flex cursor-pointer items-center"
+      <TooltipAnchor description={tooltipText} side="top">
+        <button
+          className={cn(
+            'ml-0 flex items-center gap-1.5 rounded-md p-1 text-sm hover:bg-gray-100 hover:text-gray-500 focus:opacity-100 dark:text-gray-400/70 dark:hover:bg-gray-700 dark:hover:text-gray-200 disabled:dark:hover:text-gray-400 md:group-hover:visible md:group-[.final-completion]:visible',
+            !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
+          )}
+          type="button"
+          aria-label={tooltipText}
+          onClick={() => setIsDialogOpen(true)}
         >
           <DollarSign size={15} className="hover:text-gray-500 dark:hover:text-gray-200" />
           <span>{compactCostDisplay}</span>
-        </TooltipAnchor>
-      </button>
+        </button>
+      </TooltipAnchor>
 
       <OGDialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <OGDialogContent
@@ -764,7 +757,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
 
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium text-text-primary">
-              {breakdown.modelLabel || breakdown.model || UI_TEXT.unknownModel}
+              {modelLabel || breakdown.model || UI_TEXT.unknownModel}
             </span>
             <div className="flex items-center gap-2">
               <span className="rounded-full border border-border-light bg-surface-secondary px-2.5 py-1 text-xs text-text-secondary">
