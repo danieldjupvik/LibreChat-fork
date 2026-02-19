@@ -1,14 +1,17 @@
 let usdToNokRateCache: number | null = null;
 let lastFetchTime = 0;
+let lastFetchFailed = false;
 let usdToNokRatePromise: Promise<number | null> | null = null;
 
 const CACHE_DURATION_MS = 60 * 60 * 1000;
+const FAILURE_BACKOFF_MS = 60_000;
 const USD_TO_NOK_ENDPOINT = 'https://api.frankfurter.app/latest?from=USD&to=NOK';
 
 export const fetchUsdToNokRate = async (): Promise<number | null> => {
   const now = Date.now();
+  const cooldown = lastFetchFailed ? FAILURE_BACKOFF_MS : CACHE_DURATION_MS;
 
-  if (now - lastFetchTime < CACHE_DURATION_MS) {
+  if (now - lastFetchTime < cooldown) {
     return usdToNokRateCache;
   }
 
@@ -38,11 +41,13 @@ export const fetchUsdToNokRate = async (): Promise<number | null> => {
 
       usdToNokRateCache = rate;
       lastFetchTime = Date.now();
+      lastFetchFailed = false;
 
       return rate;
     } catch (error) {
       console.error('Error fetching USD/NOK rate:', error);
       lastFetchTime = Date.now();
+      lastFetchFailed = true;
       return usdToNokRateCache;
     } finally {
       clearTimeout(timer);
