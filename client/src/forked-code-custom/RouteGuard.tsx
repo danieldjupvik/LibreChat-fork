@@ -47,7 +47,7 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
         setDenialReason(accessGranted ? null : (data.reason ?? 'no_active_subscription'));
         setCheckoutUrl(data.checkoutUrl ?? null);
       }
-    } catch (error) {
+    } catch (_error) {
       // Aborted requests are expected during user switches — don't update state
       if (signal?.aborted) {
         return;

@@ -879,11 +879,14 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             </div>
           </div>
 
-          {claudeCost != null && displayedClaudeCost != null && breakdownTotalInUsd != null && breakdownTotalInUsd > 0 && (
-            <div className="text-center text-xs italic text-text-secondary opacity-60">
-              {`${UI_TEXT.claudeComparisonPrefix} ${CLAUDE_COMPARISON.label} ${UI_TEXT.claudeComparisonMiddle} ${formatCurrencyValue(displayedClaudeCost, displayCurrency)} (${Math.round(claudeCost / breakdownTotalInUsd)}${UI_TEXT.claudeComparisonSuffix})`}
-            </div>
-          )}
+          {claudeCost != null &&
+            displayedClaudeCost != null &&
+            breakdownTotalInUsd != null &&
+            breakdownTotalInUsd > 0 && (
+              <div className="text-center text-xs italic text-text-secondary opacity-60">
+                {`${UI_TEXT.claudeComparisonPrefix} ${CLAUDE_COMPARISON.label} ${UI_TEXT.claudeComparisonMiddle} ${formatCurrencyValue(displayedClaudeCost, displayCurrency)} (${Math.round(claudeCost / breakdownTotalInUsd)}${UI_TEXT.claudeComparisonSuffix})`}
+              </div>
+            )}
         </OGDialogContent>
       </OGDialog>
     </>
