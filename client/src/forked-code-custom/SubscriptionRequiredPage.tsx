@@ -8,25 +8,52 @@ import {
   RefreshCw,
   Sparkles,
 } from 'lucide-react';
+import type { DenialReason } from './RouteGuard';
 
-// Text constants to avoid ESLint literal string warnings
+const DENIAL_CONTENT: Record<
+  string,
+  { title: string; description: string; statusInfo: string }
+> = {
+  no_account: {
+    title: 'Account Not Found',
+    description:
+      'We could not find a billing account associated with your email. Please make sure you have signed up for our service and try again.',
+    statusInfo:
+      'No billing account was found for your email. If you recently signed up, try verifying your access status.',
+  },
+  no_payment_method: {
+    title: 'Payment Method Required',
+    description:
+      'Your account exists but no payment method is connected. Please add a payment method through the billing portal to activate your access.',
+    statusInfo:
+      'Your account is missing a payment method. Add one through the billing portal, then verify your access.',
+  },
+  no_active_subscription: {
+    title: 'Subscription Inactive',
+    description:
+      'Your payment method is set up, but you don\'t have an active subscription. Please activate a subscription to get access.',
+    statusInfo:
+      'Your subscription is currently inactive. Activate a subscription, then verify your access status.',
+  },
+  default: {
+    title: 'Unlock Full Access',
+    description:
+      'To get access to this premium service, you need to activate your subscription. Our pay-as-you-go model ensures you only pay for what you use.',
+    statusInfo:
+      'Your subscription is currently inactive. You can check again to verify your access status.',
+  },
+};
+
 const TEXT = {
   errorTitle: 'Connection Issue',
   errorMessage:
     'We encountered a problem verifying your subscription status. Please try again or contact support if the issue persists.',
   tryAgain: 'Try Again',
   logout: 'Logout',
-  needHelp: 'Need help? Contact',
   supportEmail: 'support@danieldjupvik.com',
   supportEmailHref: 'sockets.might-9b@icloud.com',
-  unlockAccess: 'Unlock Full Access',
-  subscriptionInfo:
-    'To get access to this premium service, you need to activate your subscription. Our pay-as-you-go model ensures you only pay for what you use.',
   stripeInfo:
     'Our payment system is powered by Stripe, ensuring your payment information is secure and protected.',
-  accessStatus: 'Access Status',
-  statusInfo:
-    'Your subscription is currently inactive. You can check again to verify your access status.',
   verifyStatus: 'Verify Access Status',
   features: {
     payAsYouGo: {
@@ -44,65 +71,51 @@ const TEXT = {
   },
 };
 
-// Minimum loading time in milliseconds to ensure users notice the loading state
 const MIN_LOADING_TIME = 1000;
 
-// Define the props type for the component
 type SubscriptionRequiredPageProps = {
   onLogout: () => void;
   error?: boolean;
   onRecheck: () => void;
   isLoading?: boolean;
+  denialReason?: DenialReason;
+  checkoutUrl?: string | null;
 };
 
-/**
- * Modern page shown to users who are authenticated but lack an active subscription
- * or encountered an error during the subscription check.
- */
 const SubscriptionRequiredPage = ({
   onLogout,
   error = false,
   onRecheck,
   isLoading = false,
+  denialReason = null,
+  checkoutUrl = null,
 }: SubscriptionRequiredPageProps) => {
   const [isVisible, setIsVisible] = useState(false);
   const [isLocalLoading, setIsLocalLoading] = useState(false);
 
   useEffect(() => {
-    // First set to false to ensure we start with hidden state
     setIsVisible(false);
-
-    // Then set a small delay before showing to ensure animation triggers properly
     const timer = setTimeout(() => {
       setIsVisible(true);
-    }, 50); // Small delay to ensure the initial render is complete
-
+    }, 50);
     return () => clearTimeout(timer);
   }, []);
 
-  // Handle loading state with minimum duration
   const handleRecheck = () => {
     setIsLocalLoading(true);
-
-    // Call the actual recheck function
     onRecheck();
-
-    // Set up a timer to ensure minimum loading time
     setTimeout(() => {
       setIsLocalLoading(false);
     }, MIN_LOADING_TIME);
   };
 
-  // Combined loading state (either from props or local state)
   const combinedLoading = isLoading || isLocalLoading;
 
-  // Reset local loading state when props loading state changes to false
   useEffect(() => {
     if (!isLoading && isLocalLoading) {
       const timerId = setTimeout(() => {
         setIsLocalLoading(false);
       }, MIN_LOADING_TIME);
-
       return () => clearTimeout(timerId);
     }
   }, [isLoading, isLocalLoading]);
@@ -120,6 +133,8 @@ const SubscriptionRequiredPage = ({
       onRecheck={handleRecheck}
       isLoading={combinedLoading}
       isVisible={isVisible}
+      denialReason={denialReason}
+      checkoutUrl={checkoutUrl}
     />
   );
 
@@ -199,35 +214,101 @@ const ErrorView = ({
   );
 };
 
+const ActionButtons = ({
+  onRecheck,
+  onLogout,
+  isLoading,
+  statusInfo,
+  checkoutUrl,
+}: {
+  onRecheck: () => void;
+  onLogout: () => void;
+  isLoading: boolean;
+  statusInfo: string;
+  checkoutUrl?: string | null;
+}) => (
+  <>
+    <h3 className="mb-2 font-medium text-text-primary">{'Access Status'}</h3>
+    <p className="mb-6 text-sm text-text-secondary">{statusInfo}</p>
+
+    {checkoutUrl && (
+      <a
+        href={checkoutUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-3 inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2"
+        aria-label="Add payment method"
+      >
+        <CreditCard className="mr-3 h-4 w-4" />
+        {'Add Payment Method'}
+      </a>
+    )}
+
+    <button
+      type="button"
+      onClick={onRecheck}
+      disabled={isLoading}
+      className={`inline-flex w-full items-center justify-center rounded-md px-4 py-2 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+        checkoutUrl
+          ? 'mb-3 border border-border-light bg-surface-secondary text-secondary-foreground/90 focus:ring-gray-400'
+          : 'mb-3 bg-[#3bd5b0] text-surface-primary-alt focus:ring-[#3bd5b0]/50'
+      }`}
+      aria-label="Recheck subscription status"
+      aria-disabled={isLoading}
+    >
+      {isLoading ? (
+        <Loader2 className="mr-3 h-4 w-4 animate-spin" />
+      ) : (
+        <RefreshCw className="mr-3 h-4 w-4" />
+      )}
+      {TEXT.verifyStatus}
+    </button>
+
+    <button
+      onClick={onLogout}
+      className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+      tabIndex={0}
+      aria-label="Logout"
+      onKeyDown={(e) => e.key === 'Enter' && onLogout()}
+    >
+      {TEXT.logout}
+    </button>
+  </>
+);
+
 const SubscriptionView = ({
   onLogout,
   onRecheck,
   isLoading,
   isVisible,
+  denialReason,
+  checkoutUrl,
 }: {
   onLogout: () => void;
   onRecheck: () => void;
   isLoading: boolean;
   isVisible: boolean;
+  denialReason: DenialReason;
+  checkoutUrl?: string | null;
 }) => {
-  // Darker green accent color for better contrast
-  const accentColor = '#3bd5b0';
+  const reasonKey = denialReason ?? 'default';
+  const denialContent = DENIAL_CONTENT[reasonKey] || DENIAL_CONTENT.default;
 
   const features = [
     {
       title: TEXT.features.payAsYouGo.title,
       description: TEXT.features.payAsYouGo.desc,
-      icon: <CreditCard className={`h-5 w-5 text-[${accentColor}]`} />,
+      icon: <CreditCard className="h-5 w-5 text-[#3bd5b0]" />,
     },
     {
       title: TEXT.features.processingFee.title,
       description: TEXT.features.processingFee.desc,
-      icon: <ShieldCheck className={`h-5 w-5 text-[${accentColor}]`} />,
+      icon: <ShieldCheck className="h-5 w-5 text-[#3bd5b0]" />,
     },
     {
       title: TEXT.features.premiumSupport.title,
       description: TEXT.features.premiumSupport.desc,
-      icon: <LockKeyhole className={`h-5 w-5 text-[${accentColor}]`} />,
+      icon: <LockKeyhole className="h-5 w-5 text-[#3bd5b0]" />,
     },
   ];
 
@@ -247,11 +328,11 @@ const SubscriptionView = ({
               <Sparkles className="h-6 w-6 text-[#3bd5b0]" />
             </div>
             <h2 className="text-2xl font-bold text-text-primary" style={{ marginLeft: '0.75rem' }}>
-              {TEXT.unlockAccess}
+              {denialContent.title}
             </h2>
           </div>
 
-          <p className="mb-8 text-text-secondary md:mb-10">{TEXT.subscriptionInfo}</p>
+          <p className="mb-8 text-text-secondary md:mb-10">{denialContent.description}</p>
 
           <div className="mb-8 space-y-6 md:mb-10 md:space-y-8">
             {features.map((feature, index) => (
@@ -274,7 +355,7 @@ const SubscriptionView = ({
             ))}
           </div>
 
-          {/* Right column - Actions */}
+          {/* Mobile Actions */}
           <div className="mb-6 flex flex-col md:hidden">
             <div
               className={`mb-4 transform rounded-lg border border-border-light bg-surface-chat p-5 transition-all duration-700 ease-out ${
@@ -287,34 +368,13 @@ const SubscriptionView = ({
                 willChange: 'opacity, transform',
               }}
             >
-              <h3 className="mb-2 font-medium text-text-primary">{TEXT.accessStatus}</h3>
-              <p className="mb-6 text-sm text-text-secondary">{TEXT.statusInfo}</p>
-
-              <button
-                type="button"
-                onClick={onRecheck}
-                disabled={isLoading}
-                className="mb-3 inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="Recheck subscription status"
-                aria-disabled={isLoading}
-              >
-                {isLoading ? (
-                  <Loader2 className="mr-3 h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="mr-3 h-4 w-4" />
-                )}
-                {TEXT.verifyStatus}
-              </button>
-
-              <button
-                onClick={onLogout}
-                className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-                tabIndex={0}
-                aria-label="Logout"
-                onKeyDown={(e) => e.key === 'Enter' && onLogout()}
-              >
-                {TEXT.logout}
-              </button>
+              <ActionButtons
+                onRecheck={onRecheck}
+                onLogout={onLogout}
+                isLoading={isLoading}
+                statusInfo={denialContent.statusInfo}
+                checkoutUrl={checkoutUrl}
+              />
             </div>
           </div>
 
@@ -345,34 +405,13 @@ const SubscriptionView = ({
               willChange: 'opacity, transform',
             }}
           >
-            <h3 className="mb-2 font-medium text-text-primary">{TEXT.accessStatus}</h3>
-            <p className="mb-6 text-sm text-text-secondary">{TEXT.statusInfo}</p>
-
-            <button
-              type="button"
-              onClick={onRecheck}
-              disabled={isLoading}
-              className="mb-3 inline-flex w-full items-center justify-center rounded-md bg-[#3bd5b0] px-4 py-2 text-surface-primary-alt transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#3bd5b0]/50 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Recheck subscription status"
-              aria-disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="mr-3 h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-3 h-4 w-4" />
-              )}
-              {TEXT.verifyStatus}
-            </button>
-
-            <button
-              onClick={onLogout}
-              className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-              tabIndex={0}
-              aria-label="Logout"
-              onKeyDown={(e) => e.key === 'Enter' && onLogout()}
-            >
-              {TEXT.logout}
-            </button>
+            <ActionButtons
+              onRecheck={onRecheck}
+              onLogout={onLogout}
+              isLoading={isLoading}
+              statusInfo={denialContent.statusInfo}
+              checkoutUrl={checkoutUrl}
+            />
           </div>
         </div>
       </div>

@@ -2,70 +2,57 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { logger } = require('../../../config');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
-// Get Lago API base URL from environment variables or use default
 const lagoBaseURL = process.env.LAGO_BASE_URL || 'https://lago.danieldjupvik.com';
 
+const lagoRequest = (apiKey, path, params = {}) =>
+  axios.get(`${lagoBaseURL}/api/v1${path}`, {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    params,
+    timeout: 5000,
+  });
+
+const lagoPost = (apiKey, path) =>
+  axios.post(
+    `${lagoBaseURL}/api/v1${path}`,
+    {},
+    {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    },
+  );
+
 /**
- * Fetches all subscriptions from Lago API, handling pagination.
- *
- * @param {string} apiKey - Lago API key.
- * @param {string} baseUrl - Full endpoint URL for Lago subscriptions.
- * @returns {Array} Combined array of subscriptions.
+ * Generates a Stripe checkout URL for a Lago customer.
+ * Returns null if generation fails (non-critical).
  */
-async function fetchAllSubscriptions(apiKey, baseUrl) {
-  let allSubscriptions = [];
-  let currentPage = 1;
-  let hasMorePages = true;
-
-  while (hasMorePages) {
-    try {
-      const response = await axios.get(`${baseUrl}?page=${currentPage}`, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 5000, // Optional: timeout after 5 seconds
-      });
-
-      const { subscriptions = [], meta = {} } = response.data;
-      allSubscriptions = [...allSubscriptions, ...subscriptions];
-
-      // If meta.total_pages or meta.has_more is provided by the API, you might check those as well.
-      if (meta.next_page) {
-        currentPage = meta.next_page;
-      } else {
-        hasMorePages = false;
-      }
-    } catch (error) {
-      logger.error(`Error fetching page ${currentPage} of subscriptions:`, error);
-      // If an error occurs on the first page or if nothing has been fetched, treat it as critical.
-      if (currentPage === 1 || allSubscriptions.length === 0) {
-        throw new Error('Error fetching subscriptions: API might be down.');
-      }
-      hasMorePages = false;
-    }
+async function getCheckoutUrl(apiKey, customerExternalId) {
+  try {
+    const response = await lagoPost(apiKey, `/customers/${customerExternalId}/checkout_url`);
+    return response.data?.customer?.checkout_url || null;
+  } catch (error) {
+    logger.warn('Failed to generate checkout URL:', error.message);
+    return null;
   }
-
-  return allSubscriptions;
 }
 
 /**
  * Proxy endpoint to fetch subscription information from Lago.
- * This keeps the API key secure on the server and avoids exposing it to clients.
+ * Identity is derived from the authenticated session (req.user), not query params.
  *
  * @route GET /api/forked/lago/subscription
- * @param {string} userId - The user ID to check subscription status for.
- * @param {string} email - The user email to check whitelist for.
- * @returns {object} Subscription information including status.
  */
-router.get('/subscription', async (req, res) => {
+router.get('/subscription', requireJwtAuth, async (req, res) => {
   try {
-    const { userId, email } = req.query;
-
-    if (!userId) {
-      return res.status(400).json({ error: 'userId parameter is required' });
-    }
+    const userId = req.user._id.toString();
+    const email = req.user.email;
 
     const apiKey = process.env.LAGO_API_KEY;
     if (!apiKey) {
@@ -73,20 +60,17 @@ router.get('/subscription', async (req, res) => {
       return res.status(500).json({ error: 'Lago API key not configured' });
     }
 
-    // Whitelist of emails who can bypass subscription check
     const whitelistedEmails = process.env.LAGO_WHITELISTED_EMAILS
-      ? process.env.LAGO_WHITELISTED_EMAILS.split(',')
+      ? process.env.LAGO_WHITELISTED_EMAILS.split(',').map((e) => e.trim().toLowerCase())
       : [];
 
-    // Legacy user ID whitelist (for backward compatibility)
     const whitelistedUsers = process.env.LAGO_WHITELISTED_USERS
-      ? process.env.LAGO_WHITELISTED_USERS.split(',')
+      ? process.env.LAGO_WHITELISTED_USERS.split(',').map((u) => u.trim())
       : [];
 
-    // If the email or user ID is whitelisted, grant subscription access
     if (
-      email &&
-      (whitelistedEmails.includes(email.toLowerCase()) || whitelistedUsers.includes(userId))
+      (email && whitelistedEmails.includes(email.toLowerCase())) ||
+      whitelistedUsers.includes(userId)
     ) {
       return res.json({
         hasSubscription: true,
@@ -95,31 +79,82 @@ router.get('/subscription', async (req, res) => {
       });
     }
 
-    // Construct the full Lago API endpoint URL for subscriptions
-    const subscriptionsEndpoint = `${lagoBaseURL}/api/v1/subscriptions`;
+    if (!email) {
+      return res.json({
+        hasSubscription: false,
+        whitelisted: false,
+        subscription: null,
+        reason: 'no_account',
+      });
+    }
 
-    // Fetch all subscriptions across pages (this function may throw on errors)
-    const allSubscriptions = await fetchAllSubscriptions(apiKey, subscriptionsEndpoint);
+    // Step 1: Find the Lago customer by email
+    const customerResponse = await lagoRequest(apiKey, '/customers', {
+      search_term: email.toLowerCase(),
+      per_page: 5,
+    });
 
-    // Find the active subscription for this user
-    const normalizedUserId = userId.trim();
-    const userSubscription = allSubscriptions.find(
-      (sub) => sub.external_id.trim() === normalizedUserId && sub.status === 'active',
+    const { customers = [] } = customerResponse.data;
+    const customer = customers.find(
+      (c) => c.email && c.email.toLowerCase() === email.toLowerCase(),
     );
 
-    // Cache response for 5 minutes to reduce load on the Lago service
-    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (!customer) {
+      return res.json({
+        hasSubscription: false,
+        whitelisted: false,
+        subscription: null,
+        reason: 'no_account',
+      });
+    }
+
+    // Step 2: Verify billing provider is configured
+    const billingConfig = customer.billing_configuration || {};
+    if (!billingConfig.payment_provider || !billingConfig.provider_customer_id) {
+      const checkoutUrl = billingConfig.payment_provider
+        ? await getCheckoutUrl(apiKey, customer.external_id)
+        : null;
+
+      return res.json({
+        hasSubscription: false,
+        whitelisted: false,
+        subscription: null,
+        reason: 'no_payment_method',
+        checkoutUrl,
+      });
+    }
+
+    // Step 3: Check for active subscriptions using the customer's external_id
+    const subResponse = await lagoRequest(apiKey, '/subscriptions', {
+      external_customer_id: customer.external_id,
+      'status[]': 'active',
+    });
+
+    const { subscriptions = [] } = subResponse.data;
+    const userSubscription = subscriptions.length > 0 ? subscriptions[0] : null;
+
+    if (userSubscription) {
+      return res.json({
+        hasSubscription: true,
+        whitelisted: false,
+        subscription: userSubscription,
+      });
+    }
+
+    // No active subscription — generate checkout URL so user can add/update payment method
+    const checkoutUrl = await getCheckoutUrl(apiKey, customer.external_id);
 
     return res.json({
-      hasSubscription: !!userSubscription,
+      hasSubscription: false,
       whitelisted: false,
-      subscription: userSubscription || null,
+      subscription: null,
+      reason: 'no_active_subscription',
+      checkoutUrl,
     });
   } catch (error) {
     logger.error('Error fetching Lago subscription info:', error);
     logger.warn('Denying access due to Lago API error');
 
-    // Deny access when there is an error connecting to the subscription service
     return res.json({
       hasSubscription: false,
       error: true,

@@ -1,10 +1,15 @@
-import { useState, useEffect, ReactNode, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchSubscriptionStatus } from './utils';
 import SubscriptionRequiredPage from './SubscriptionRequiredPage';
 
 type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error';
+
+export type DenialReason =
+  | 'no_account'
+  | 'no_payment_method'
+  | 'no_active_subscription'
+  | null;
 
 type RouteGuardProps = {
   children: ReactNode;
@@ -20,118 +25,85 @@ const publicPaths = [
 ];
 
 /**
- * RouteGuard combines authentication and subscription checks by calling the API
- * for the current subscription status. It only renders children when the auth details
- * and subscription check are complete.
+ * RouteGuard checks subscription status via API.
+ * Optimistic: shows children immediately while check runs.
+ * Only blocks if the API confirms no active subscription.
  */
 const RouteGuard = ({ children }: RouteGuardProps) => {
   const { user, isAuthenticated, logout } = useAuthContext();
-  const location = useLocation();
   const [checkStatus, setCheckStatus] = useState<CheckStatus>('pending');
-  const [isCheckComplete, setIsCheckComplete] = useState(false);
+  const [denialReason, setDenialReason] = useState<DenialReason>(null);
+  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [isRechecking, setIsRechecking] = useState(false);
+  const checkedUserIdRef = useRef<string | null>(null);
 
-  const isPublicPath = publicPaths.some((path) => location.pathname.startsWith(path));
-
-  // Subscription API Check Logic (no caching in localStorage)
-  const performSubscriptionCheck = useCallback(async (userId: string, email?: string) => {
-    console.log('[RouteGuard Async] Starting API check...');
+  const performSubscriptionCheck = useCallback(async () => {
     try {
-      const data = await fetchSubscriptionStatus(userId, email);
-      console.log('[RouteGuard Async] API result:', data);
-      let finalStatus: CheckStatus;
+      const data = await fetchSubscriptionStatus();
 
       if (data.error && !data.fallback) {
-        finalStatus = 'error';
+        setCheckStatus('error');
+        setDenialReason(null);
+        setCheckoutUrl(null);
       } else {
         const accessGranted = data.hasSubscription || data.whitelisted || data.fallback;
-        finalStatus = accessGranted ? 'access-granted' : 'subscription-required';
+        setCheckStatus(accessGranted ? 'access-granted' : 'subscription-required');
+        setDenialReason(accessGranted ? null : (data.reason ?? 'no_active_subscription'));
+        setCheckoutUrl(data.checkoutUrl ?? null);
       }
-
-      setCheckStatus(finalStatus);
-      setIsCheckComplete(true);
-    } catch (fetchError) {
-      console.error('[RouteGuard Async] API fetch error:', fetchError);
+    } catch {
       setCheckStatus('error');
-      setIsCheckComplete(true);
+      setDenialReason(null);
+      setCheckoutUrl(null);
     } finally {
       setIsRechecking(false);
     }
   }, []);
 
-  // Triggered manually from SubscriptionRequiredPage to recheck subscription
   const handleRecheckSubscription = useCallback(() => {
-    if (!user?.id) {
-      console.error('[RouteGuard Recheck] Cannot recheck without user ID.');
-      return;
-    }
-    console.log('[RouteGuard Recheck] Initiating recheck...');
     setIsRechecking(true);
-    performSubscriptionCheck(user.id, user.email);
-  }, [user?.id, user?.email, performSubscriptionCheck]);
+    performSubscriptionCheck();
+  }, [performSubscriptionCheck]);
+
+  // Reset ref when user logs out so re-login triggers a fresh check
+  useEffect(() => {
+    if (!isAuthenticated) {
+      checkedUserIdRef.current = null;
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
-    let isMounted = true;
-    // Reset state on dependency changes
-    setIsCheckComplete(false);
-    setCheckStatus('pending');
-
-    if (isPublicPath) {
-      console.log('[RouteGuard] Public path.');
-      setCheckStatus('access-granted');
-      setIsCheckComplete(true);
-    } else if (!isAuthenticated) {
-      console.log('[RouteGuard] Unauthenticated.');
-      setCheckStatus('access-granted');
-      setIsCheckComplete(true);
-    } else if (isAuthenticated && !user?.id) {
-      console.log('[RouteGuard] Authenticated but waiting for user ID.');
-      // Remains pending until user data is available
-    } else if (isAuthenticated && user?.id) {
-      console.log('[RouteGuard] Authenticated with user ID. Checking subscription via API...');
-      performSubscriptionCheck(user.id, user.email).then(() => {
-        // Optionally, check if still mounted before proceeding
-        if (!isMounted) {
-          return null;
-        }
-      });
+    if (!isAuthenticated || !user?.id || checkedUserIdRef.current === user.id) {
+      return;
     }
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    user?.id,
-    user?.email,
-    isAuthenticated,
-    location.pathname,
-    isPublicPath,
-    performSubscriptionCheck,
-  ]);
 
-  // Rendering logic: show nothing until auth and subscription check are complete
-  if (isPublicPath) {
+    checkedUserIdRef.current = user.id;
+    setCheckStatus('pending');
+    performSubscriptionCheck();
+  }, [user?.id, isAuthenticated, performSubscriptionCheck]);
+
+  // Public paths and unauthenticated users pass through
+  const isPublicPath = publicPaths.some((path) => window.location.pathname.startsWith(path));
+  if (isPublicPath || !isAuthenticated || !user?.id) {
     return <>{children}</>;
   }
 
-  if (!isAuthenticated || !user?.id || !isCheckComplete) {
-    return null;
+  // Optimistic: show children while check is pending or access is granted
+  if (checkStatus === 'pending' || checkStatus === 'access-granted') {
+    return <>{children}</>;
   }
 
-  if (checkStatus === 'access-granted') {
-    return <>{children}</>;
-  } else if (checkStatus === 'subscription-required' || checkStatus === 'error') {
-    return (
-      <SubscriptionRequiredPage
-        onLogout={() => logout('/login?redirect=false')}
-        error={checkStatus === 'error'}
-        onRecheck={handleRecheckSubscription}
-        isLoading={isRechecking}
-      />
-    );
-  } else {
-    console.error('[RouteGuard Render] Unexpected state: Check complete but status is pending.');
-    return null;
-  }
+  // Only block when API has confirmed no subscription or error
+  return (
+    <SubscriptionRequiredPage
+      onLogout={() => logout('/login?redirect=false')}
+      error={checkStatus === 'error'}
+      onRecheck={handleRecheckSubscription}
+      isLoading={isRechecking}
+      denialReason={denialReason}
+      checkoutUrl={checkoutUrl}
+    />
+  );
 };
 
 export default RouteGuard;

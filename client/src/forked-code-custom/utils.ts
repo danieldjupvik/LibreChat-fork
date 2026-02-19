@@ -66,37 +66,13 @@ export const toggleTheme = (): string => {
 
 /**
  * Fetches subscription status from Lago through our proxy endpoint.
- * Always makes a fresh API call.
- *
- * @param userId - The user ID to check subscription for
- * @param email - The user email to check against whitelist
- * @returns An object with subscription status information
+ * Identity is derived server-side from the JWT session.
+ * Uses axios so the global Authorization header is included automatically.
  */
-export const fetchSubscriptionStatus = async (userId: string, email?: string) => {
-  if (!userId) {
-    console.error('fetchSubscriptionStatus called without userId');
-    return {
-      hasSubscription: false,
-      error: true,
-      errorMessage: 'No user ID provided',
-      fallback: false,
-    };
-  }
-
+export const fetchSubscriptionStatus = async () => {
+  const axios = (await import('axios')).default;
   try {
-    const url = new URL('/api/forked/lago/subscription', window.location.origin);
-    url.searchParams.append('userId', userId);
-    if (email) {
-      url.searchParams.append('email', email);
-    }
-
-    const response = await fetch(url.toString());
-
-    if (!response.ok) {
-      throw new Error(`Error fetching subscription status: ${response.status}`);
-    }
-
-    const data = await response.json();
+    const { data } = await axios.get('/api/forked/lago/subscription');
     return data;
   } catch (error) {
     console.error('Error checking subscription status:', error);
