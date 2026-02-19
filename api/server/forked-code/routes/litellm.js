@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const axios = require('axios');
 const { logger } = require('../../../config');
+const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 /**
  * Proxy endpoint to fetch model information from LiteLLM
@@ -10,7 +11,7 @@ const { logger } = require('../../../config');
  * @route GET /api/forked/litellm/model-info
  * @returns {object} Model information including pricing and context windows
  */
-router.get('/model-info', async (req, res) => {
+router.get('/model-info', requireJwtAuth, async (req, res) => {
   try {
     const apiKey = process.env.LITELLM_API_KEY;
 
@@ -61,6 +62,41 @@ router.get('/model-info', async (req, res) => {
       error: 'Internal server error while fetching model information',
       message: error.message,
     });
+  }
+});
+
+/**
+ * Proxy endpoint to fetch cost margin config from LiteLLM
+ *
+ * @route GET /api/forked/litellm/cost-margin
+ * @returns {object} { margin: number } — global margin as a decimal (e.g. 0.15 = 15%)
+ */
+router.get('/cost-margin', requireJwtAuth, async (req, res) => {
+  try {
+    const apiKey = process.env.LITELLM_API_KEY;
+
+    if (!apiKey) {
+      return res.json({ margin: 0 });
+    }
+
+    const baseURL = process.env.LITELLM_BASE_URL || 'https://litellm.danieldjupvik.com';
+    const response = await axios.get(`${baseURL}/config/cost_margin_config`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    });
+
+    const globalMargin = response.data?.values?.global;
+    const margin =
+      typeof globalMargin === 'number' && Number.isFinite(globalMargin) ? globalMargin : 0;
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.json({ margin });
+  } catch (error) {
+    logger.error('Error fetching LiteLLM cost margin config:', error?.message);
+    return res.status(502).json({ error: 'Failed to fetch cost margin config' });
   }
 });
 

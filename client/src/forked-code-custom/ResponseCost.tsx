@@ -15,7 +15,7 @@ import {
 import { DollarSign } from 'lucide-react';
 import copy from 'copy-to-clipboard';
 import { fetchUsdToNokRate } from './currencyAdapter';
-import { fetchLiteLLMModelInfo } from './litellmInfoAdapter';
+import { fetchLiteLLMModelInfo, fetchCostMargin } from './litellmInfoAdapter';
 import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '../utils';
 
@@ -59,7 +59,7 @@ type CostBreakdown = {
   lockedRates: boolean;
   inputTokens: number;
   outputTokens: number;
-  reasoningTokens: number;
+  reasoningTokens: number | null;
   effectiveInputTokens: number;
   effectiveOutputTokens: number;
   inputCost: number;
@@ -234,12 +234,13 @@ const buildBreakdownFromRates = ({
   model?: string;
   inputTokens: number;
   outputTokens: number;
-  reasoningTokens: number;
+  reasoningTokens: number | null;
   rates: LiteLLMRates;
   lockedRates: boolean;
 }): CostBreakdown => {
-  const cappedReasoningTokens = Math.min(outputTokens, reasoningTokens);
-  const effectiveOutputTokens = Math.max(0, outputTokens - cappedReasoningTokens);
+  const cappedReasoningTokens =
+    reasoningTokens != null ? Math.min(outputTokens, reasoningTokens) : null;
+  const effectiveOutputTokens = Math.max(0, outputTokens - (cappedReasoningTokens ?? 0));
 
   const inputRate = toNonNegativeNumber(rates.input_cost_per_token);
   const outputRate = toNonNegativeNumber(rates.output_cost_per_token);
@@ -247,7 +248,7 @@ const buildBreakdownFromRates = ({
 
   const inputCost = inputTokens * inputRate;
   const outputCost = effectiveOutputTokens * outputRate;
-  const reasoningCost = cappedReasoningTokens * reasoningRate;
+  const reasoningCost = (cappedReasoningTokens ?? 0) * reasoningRate;
   const totalCost = inputCost + outputCost + reasoningCost;
 
   return {
@@ -277,7 +278,8 @@ const buildBreakdownFromSnapshot = ({
 }): CostBreakdown | null => {
   const inputTokens = toPositiveNumber(usage.input_tokens);
   const outputTokens = toPositiveNumber(usage.output_tokens);
-  const reasoningTokens = toPositiveNumber(usage.reasoning_tokens);
+  const reasoningTokens =
+    usage.reasoning_tokens != null ? toNonNegativeNumber(usage.reasoning_tokens) : null;
 
   const rates = usage.rates ?? null;
   if (rates) {
@@ -296,8 +298,9 @@ const buildBreakdownFromSnapshot = ({
     return null;
   }
 
-  const cappedReasoningTokens = Math.min(outputTokens, reasoningTokens);
-  const effectiveOutputTokens = Math.max(0, outputTokens - cappedReasoningTokens);
+  const cappedReasoningTokens =
+    reasoningTokens != null ? Math.min(outputTokens, reasoningTokens) : null;
+  const effectiveOutputTokens = Math.max(0, outputTokens - (cappedReasoningTokens ?? 0));
 
   const inputCostVal = toNonNegativeNumber(costs.input);
   const outputCostVal = toNonNegativeNumber(costs.output);
@@ -329,6 +332,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [displayCurrencyPreference, setDisplayCurrencyPreference] =
     useState<SupportedCurrency>('USD');
   const [usdToNokRate, setUsdToNokRate] = useState<number | null>(null);
+  const [costMargin, setCostMargin] = useState(0);
   const calculationComplete = useRef(false);
   const { data: startupConfig } = useGetStartupConfig();
   const queryClient = useQueryClient();
@@ -366,7 +370,15 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       }
     };
 
+    const getMargin = async () => {
+      const margin = await fetchCostMargin();
+      if (isMounted) {
+        setCostMargin(margin);
+      }
+    };
+
     getCurrencyRate();
+    getMargin();
 
     return () => {
       isMounted = false;
@@ -379,7 +391,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       typeof msg.promptTokens === 'number' && msg.promptTokens > 0 ? msg.promptTokens : 0;
     const completionTokens =
       typeof msg.tokenCount === 'number' && msg.tokenCount > 0 ? msg.tokenCount : 0;
-    const reasoningTokens = toPositiveNumber(metadataUsage?.reasoning_tokens);
+    const reasoningTokens =
+      metadataUsage?.reasoning_tokens != null
+        ? toNonNegativeNumber(metadataUsage.reasoning_tokens)
+        : null;
 
     const metadataPromptTokens = toPositiveNumber(metadataUsage?.input_tokens);
     const metadataCompletionTokens = toPositiveNumber(metadataUsage?.output_tokens);
@@ -602,7 +617,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       });
     }
 
-    if (breakdown.reasoningTokens > 0) {
+    if (breakdown.reasoningTokens != null && breakdown.reasoningTokens > 0) {
       data.push({
         id: 'reasoning',
         label: 'Reasoning',
@@ -647,12 +662,14 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     [baseCurrency, displayCurrency, usdToNokRate],
   );
 
+  const marginMultiplier = 1 + costMargin;
+
   const displayedTotalCost = useMemo(() => {
     if (!breakdown) {
       return 0;
     }
-    return convertForDisplay(breakdown.totalCost, baseCurrency);
-  }, [breakdown, baseCurrency, convertForDisplay]);
+    return convertForDisplay(breakdown.totalCost * marginMultiplier, baseCurrency);
+  }, [breakdown, baseCurrency, convertForDisplay, marginMultiplier]);
 
   const handleCurrencyPreferenceChange = useCallback((value: string) => {
     setDisplayCurrencyPreference(value === 'NOK' ? 'NOK' : 'USD');
@@ -672,12 +689,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       return null;
     }
     return convertCurrency({
-      amount: breakdown.totalCost,
+      amount: breakdown.totalCost * marginMultiplier,
       from: baseCurrency,
       to: 'USD',
       usdToNokRate,
     });
-  }, [breakdown, baseCurrency, usdToNokRate]);
+  }, [breakdown, baseCurrency, usdToNokRate, marginMultiplier]);
 
   const claudeCost = useMemo(() => {
     if (!breakdown || !claudeRates || breakdownTotalInUsd == null) return null;
@@ -710,7 +727,10 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     return null;
   }
 
-  const compactCostDisplay = formatCurrencyValue(breakdown.totalCost, baseCurrency);
+  const compactCostDisplay = formatCurrencyValue(
+    breakdown.totalCost * marginMultiplier,
+    baseCurrency,
+  );
   const unitLabel = displayCurrency === 'USD' ? '$1' : '1 NOK';
   const showingFallbackCurrency =
     displayCurrencyPreference === 'NOK' &&
@@ -718,6 +738,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     baseCurrency === 'USD' &&
     (usdToNokRate == null || usdToNokRate <= 0);
   const totalTokens = breakdown.inputTokens + breakdown.outputTokens;
+  const hasReasoningTokens = breakdown.reasoningTokens != null && breakdown.reasoningTokens > 0;
   const tooltipText = `${compactCostDisplay} · ${formatTokens(totalTokens)} tokens (${formatTokens(breakdown.inputTokens)} in / ${formatTokens(breakdown.outputTokens)} out)`;
 
   return (
@@ -795,7 +816,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div
+            className={cn(
+              'grid gap-3',
+              hasReasoningTokens ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-3',
+            )}
+          >
             <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
               <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.totalTokens}</div>
               <div className="font-mono text-sm">
@@ -809,20 +835,19 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
               <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.outputTokens}</div>
               <div className="font-mono text-sm">
-                {formatTokens(breakdown.reasoningTokens > 0 ? breakdown.effectiveOutputTokens : breakdown.outputTokens)}
-              </div>
-            </div>
-            <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
-              <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.reasoning}</div>
-              <div
-                className={cn(
-                  'font-mono text-sm',
-                  breakdown.reasoningTokens === 0 && 'text-text-secondary',
+                {formatTokens(
+                  hasReasoningTokens ? breakdown.effectiveOutputTokens : breakdown.outputTokens,
                 )}
-              >
-                {breakdown.reasoningTokens > 0 ? formatTokens(breakdown.reasoningTokens) : '—'}
               </div>
             </div>
+            {hasReasoningTokens && (
+              <div className="rounded-lg border border-border-light bg-surface-secondary px-3 py-2.5">
+                <div className="mb-1 text-xs text-text-secondary">{UI_TEXT.reasoning}</div>
+                <div className="font-mono text-sm">
+                  {formatTokens(breakdown.reasoningTokens ?? 0)}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -839,7 +864,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
                 </div>
                 <span className="font-mono text-sm">
                   {formatCurrencyValue(
-                    convertForDisplay(row.cost, baseCurrency),
+                    convertForDisplay(row.cost * marginMultiplier, baseCurrency),
                     displayCurrency,
                     true,
                   )}

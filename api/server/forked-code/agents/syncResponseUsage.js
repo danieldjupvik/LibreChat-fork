@@ -135,7 +135,7 @@ async function syncResponseUsage({ client, response, req, persist = false }) {
       version: 2,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      reasoning_tokens: breakdown.reasoningTokens,
+      ...(breakdown.reasoningTokens > 0 ? { reasoning_tokens: breakdown.reasoningTokens } : {}),
       ...(model ? { model } : {}),
       ...(rates ? { rates } : {}),
       ...(costs ? { costs } : {}),
