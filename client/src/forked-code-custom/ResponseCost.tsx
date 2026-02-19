@@ -341,9 +341,11 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     if (!messages?.length) return null;
 
     const byId = new Map(messages.map((m) => [m.messageId, m]));
+    const visited = new Set<string>();
     let aiPosition = 0;
     let current: TMessage | undefined = byId.get(message.messageId);
-    while (current) {
+    while (current && !visited.has(current.messageId)) {
+      visited.add(current.messageId);
       if (!current.isCreatedByUser) {
         aiPosition++;
       }

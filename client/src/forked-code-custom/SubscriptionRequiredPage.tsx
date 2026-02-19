@@ -99,9 +99,6 @@ const SubscriptionRequiredPage = ({
   const handleRecheck = () => {
     setIsLocalLoading(true);
     onRecheck();
-    setTimeout(() => {
-      setIsLocalLoading(false);
-    }, MIN_LOADING_TIME);
   };
 
   const combinedLoading = isLoading || isLocalLoading;
@@ -186,6 +183,7 @@ const ErrorView = ({
           </button>
 
           <button
+            type="button"
             onClick={onLogout}
             className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 sm:w-auto"
             tabIndex={0}
@@ -260,6 +258,7 @@ const ActionButtons = ({
     </button>
 
     <button
+      type="button"
       onClick={onLogout}
       className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
       tabIndex={0}

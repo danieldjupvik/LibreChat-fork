@@ -17,8 +17,10 @@ export const fetchUsdToNokRate = async (): Promise<number | null> => {
   }
 
   usdToNokRatePromise = (async () => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      const response = await fetch(USD_TO_NOK_ENDPOINT);
+      const response = await fetch(USD_TO_NOK_ENDPOINT, { signal: controller.signal });
       if (!response.ok) {
         throw new Error(`Failed to fetch USD/NOK rate: ${response.status}`);
       }
@@ -43,6 +45,7 @@ export const fetchUsdToNokRate = async (): Promise<number | null> => {
       lastFetchTime = Date.now();
       return usdToNokRateCache;
     } finally {
+      clearTimeout(timer);
       usdToNokRatePromise = null;
     }
   })();
