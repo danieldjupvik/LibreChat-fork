@@ -25,6 +25,7 @@ router.get('/model-info', async (req, res) => {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      timeout: 5000,
     });
 
     // Cache header to reduce load on LiteLLM service

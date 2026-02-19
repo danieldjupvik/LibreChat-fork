@@ -67,14 +67,17 @@ export const toggleTheme = (): string => {
 /**
  * Fetches subscription status from Lago through our proxy endpoint.
  * Identity is derived server-side from the JWT session.
- * Uses axios so the global Authorization header is included automatically.
+ * Accepts an optional AbortSignal so callers can cancel stale requests.
  */
-export const fetchSubscriptionStatus = async () => {
+export const fetchSubscriptionStatus = async (signal?: AbortSignal) => {
   const axios = (await import('axios')).default;
   try {
-    const { data } = await axios.get('/api/forked/lago/subscription');
+    const { data } = await axios.get('/api/forked/lago/subscription', { signal });
     return data;
   } catch (error) {
+    if (axios.isCancel(error)) {
+      throw error;
+    }
     console.error('Error checking subscription status:', error);
     return {
       hasSubscription: false,

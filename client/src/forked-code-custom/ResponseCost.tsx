@@ -1,5 +1,7 @@
 import { memo, useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import type { TMessage, TConversation } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   OGDialog,
   OGDialogContent,
@@ -84,8 +86,8 @@ const UI_TEXT = {
   model: 'Model',
   currency: 'Currency',
   rates: 'Rates',
-  lockedRates: 'Locked at generation',
-  liveRates: 'Current model rates',
+  lockedRates: 'Exact cost',
+  liveRates: 'Estimated cost',
   fallbackCurrency: 'Live NOK rate unavailable. Showing USD values.',
   unknownModel: 'Unknown model',
   total: 'Total',
@@ -330,6 +332,28 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [usdToNokRate, setUsdToNokRate] = useState<number | null>(null);
   const calculationComplete = useRef(false);
   const { data: startupConfig } = useGetStartupConfig();
+  const queryClient = useQueryClient();
+
+  const threadInfo = useMemo(() => {
+    const convoId = conversation?.conversationId;
+    if (!convoId) return null;
+    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, convoId]);
+    if (!messages?.length) return null;
+
+    const byId = new Map(messages.map((m) => [m.messageId, m]));
+    let aiPosition = 0;
+    let current: TMessage | undefined = byId.get(message.messageId);
+    while (current) {
+      if (!current.isCreatedByUser) {
+        aiPosition++;
+      }
+      current = current.parentMessageId ? byId.get(current.parentMessageId) : undefined;
+    }
+
+    const totalAiMessages = messages.filter((m) => !m.isCreatedByUser).length;
+
+    return { position: aiPosition, totalAi: totalAiMessages, total: messages.length };
+  }, [conversation?.conversationId, message.messageId, queryClient]);
 
   useEffect(() => {
     let isMounted = true;
@@ -482,7 +506,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             model: messageModel,
             usage: usage.snapshot,
           });
-          if (snapshotBreakdown && isMounted && snapshotBreakdown.totalCost > 0) {
+          if (snapshotBreakdown && isMounted) {
             setBreakdown({
               ...snapshotBreakdown,
               modelLabel: getFriendlyModelName(snapshotBreakdown.model),
@@ -678,8 +702,8 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   }, [claudeCost, displayCurrency, usdToNokRate]);
 
   const messagesPerUnit = useMemo(() => {
-    if (!breakdown || breakdown.totalCost <= 0) return null;
-    const count = Math.floor(1 / displayedTotalCost);
+    if (!breakdown || breakdown.totalCost <= 0 || displayedTotalCost <= 0) return null;
+    const count = Math.min(Math.floor(1 / displayedTotalCost), 1_000_000);
     return count >= 2 ? count : null;
   }, [breakdown, displayedTotalCost]);
 
@@ -687,7 +711,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     return null;
   }
 
-  const compactCost = formatCompactCost(breakdown.totalCost);
+  const compactCostDisplay = formatCurrencyValue(breakdown.totalCost, baseCurrency);
   const unitLabel = displayCurrency === 'USD' ? '$1' : '1 NOK';
   const showingFallbackCurrency =
     displayCurrencyPreference === 'NOK' &&
@@ -695,7 +719,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     baseCurrency === 'USD' &&
     (usdToNokRate == null || usdToNokRate <= 0);
   const totalTokens = breakdown.inputTokens + breakdown.outputTokens;
-  const tooltipText = `$${compactCost} · ${formatTokens(totalTokens)} tokens (${formatTokens(breakdown.inputTokens)} in / ${formatTokens(breakdown.outputTokens)} out)`;
+  const tooltipText = `${compactCostDisplay} · ${formatTokens(totalTokens)} tokens (${formatTokens(breakdown.inputTokens)} in / ${formatTokens(breakdown.outputTokens)} out)`;
 
   return (
     <>
@@ -705,7 +729,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
           !isLast ? 'md:opacity-0 md:group-hover:opacity-100' : '',
         )}
         type="button"
-        title={tooltipText}
+        aria-label={tooltipText}
         onClick={() => setIsDialogOpen(true)}
       >
         <TooltipAnchor
@@ -714,7 +738,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
           className="flex cursor-pointer items-center"
         >
           <DollarSign size={15} className="hover:text-gray-500 dark:hover:text-gray-200" />
-          <span>{compactCost}</span>
+          <span>{compactCostDisplay}</span>
         </TooltipAnchor>
       </button>
 
@@ -724,7 +748,16 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <OGDialogHeader>
-            <OGDialogTitle>{UI_TEXT.dialogTitle}</OGDialogTitle>
+            <div className="flex items-baseline justify-between pr-6">
+              <OGDialogTitle>{UI_TEXT.dialogTitle}</OGDialogTitle>
+              {threadInfo != null && (
+                <span className="text-xs font-normal text-text-secondary">
+                  {isLast
+                    ? `${threadInfo.totalAi} responses in thread`
+                    : `Response ${threadInfo.position} of ${threadInfo.totalAi}`}
+                </span>
+              )}
+            </div>
           </OGDialogHeader>
 
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -846,7 +879,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
             </div>
           </div>
 
-          {claudeCost != null && displayedClaudeCost != null && breakdownTotalInUsd != null && (
+          {claudeCost != null && displayedClaudeCost != null && breakdownTotalInUsd != null && breakdownTotalInUsd > 0 && (
             <div className="text-center text-xs italic text-text-secondary opacity-60">
               {`${UI_TEXT.claudeComparisonPrefix} ${CLAUDE_COMPARISON.label} ${UI_TEXT.claudeComparisonMiddle} ${formatCurrencyValue(displayedClaudeCost, displayCurrency)} (${Math.round(claudeCost / breakdownTotalInUsd)}${UI_TEXT.claudeComparisonSuffix})`}
             </div>

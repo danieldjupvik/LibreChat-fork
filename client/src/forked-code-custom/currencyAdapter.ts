@@ -8,7 +8,7 @@ const USD_TO_NOK_ENDPOINT = 'https://api.frankfurter.app/latest?from=USD&to=NOK'
 export const fetchUsdToNokRate = async (): Promise<number | null> => {
   const now = Date.now();
 
-  if (usdToNokRateCache != null && now - lastFetchTime < CACHE_DURATION_MS) {
+  if (now - lastFetchTime < CACHE_DURATION_MS) {
     return usdToNokRateCache;
   }
 

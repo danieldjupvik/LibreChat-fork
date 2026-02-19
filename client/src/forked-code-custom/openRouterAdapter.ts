@@ -44,7 +44,6 @@ interface FetchOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
-  signal?: AbortSignal;
 }
 
 const timeoutFetch = async (

@@ -91,7 +91,7 @@ router.get('/subscription', requireJwtAuth, async (req, res) => {
     // Step 1: Find the Lago customer by email
     const customerResponse = await lagoRequest(apiKey, '/customers', {
       search_term: email.toLowerCase(),
-      per_page: 5,
+      per_page: 100,
     });
 
     const { customers = [] } = customerResponse.data;
@@ -152,7 +152,7 @@ router.get('/subscription', requireJwtAuth, async (req, res) => {
       checkoutUrl,
     });
   } catch (error) {
-    logger.error('Error fetching Lago subscription info:', error);
+    logger.error('Error fetching Lago subscription info:', error.message);
     logger.warn('Denying access due to Lago API error');
 
     return res.json({

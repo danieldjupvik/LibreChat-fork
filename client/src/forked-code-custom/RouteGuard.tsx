@@ -5,11 +5,7 @@ import SubscriptionRequiredPage from './SubscriptionRequiredPage';
 
 type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error';
 
-export type DenialReason =
-  | 'no_account'
-  | 'no_payment_method'
-  | 'no_active_subscription'
-  | null;
+export type DenialReason = 'no_account' | 'no_payment_method' | 'no_active_subscription' | null;
 
 type RouteGuardProps = {
   children: ReactNode;
@@ -37,9 +33,9 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
   const [isRechecking, setIsRechecking] = useState(false);
   const checkedUserIdRef = useRef<string | null>(null);
 
-  const performSubscriptionCheck = useCallback(async () => {
+  const performSubscriptionCheck = useCallback(async (signal?: AbortSignal) => {
     try {
-      const data = await fetchSubscriptionStatus();
+      const data = await fetchSubscriptionStatus(signal);
 
       if (data.error && !data.fallback) {
         setCheckStatus('error');
@@ -51,12 +47,18 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
         setDenialReason(accessGranted ? null : (data.reason ?? 'no_active_subscription'));
         setCheckoutUrl(data.checkoutUrl ?? null);
       }
-    } catch {
+    } catch (error) {
+      // Aborted requests are expected during user switches — don't update state
+      if (signal?.aborted) {
+        return;
+      }
       setCheckStatus('error');
       setDenialReason(null);
       setCheckoutUrl(null);
     } finally {
-      setIsRechecking(false);
+      if (!signal?.aborted) {
+        setIsRechecking(false);
+      }
     }
   }, []);
 
@@ -77,9 +79,12 @@ const RouteGuard = ({ children }: RouteGuardProps) => {
       return;
     }
 
+    const controller = new AbortController();
     checkedUserIdRef.current = user.id;
     setCheckStatus('pending');
-    performSubscriptionCheck();
+    performSubscriptionCheck(controller.signal);
+
+    return () => controller.abort();
   }, [user?.id, isAuthenticated, performSubscriptionCheck]);
 
   // Public paths and unauthenticated users pass through

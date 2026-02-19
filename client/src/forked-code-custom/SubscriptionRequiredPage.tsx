@@ -10,10 +10,7 @@ import {
 } from 'lucide-react';
 import type { DenialReason } from './RouteGuard';
 
-const DENIAL_CONTENT: Record<
-  string,
-  { title: string; description: string; statusInfo: string }
-> = {
+const DENIAL_CONTENT: Record<string, { title: string; description: string; statusInfo: string }> = {
   no_account: {
     title: 'Account Not Found',
     description:
@@ -31,7 +28,7 @@ const DENIAL_CONTENT: Record<
   no_active_subscription: {
     title: 'Subscription Inactive',
     description:
-      'Your payment method is set up, but you don\'t have an active subscription. Please activate a subscription to get access.',
+      "Your payment method is set up, but you don't have an active subscription. Please activate a subscription to get access.",
     statusInfo:
       'Your subscription is currently inactive. Activate a subscription, then verify your access status.',
   },
@@ -50,8 +47,6 @@ const TEXT = {
     'We encountered a problem verifying your subscription status. Please try again or contact support if the issue persists.',
   tryAgain: 'Try Again',
   logout: 'Logout',
-  supportEmail: 'support@danieldjupvik.com',
-  supportEmailHref: 'sockets.might-9b@icloud.com',
   stripeInfo:
     'Our payment system is powered by Stripe, ensuring your payment information is secure and protected.',
   verifyStatus: 'Verify Access Status',
