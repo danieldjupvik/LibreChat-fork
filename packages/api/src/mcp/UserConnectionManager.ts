@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
-import { mcpServersRegistry as serversRegistry } from '~/mcp/registry/MCPServersRegistry';
+import { MCPServersRegistry } from '~/mcp/registry/MCPServersRegistry';
 import { MCPConnection } from './connection';
 import type * as t from './types';
 import { ConnectionsRepository } from '~/mcp/ConnectionsRepository';
@@ -49,17 +49,19 @@ export abstract class UserConnectionManager {
     serverName: string;
     forceNew?: boolean;
   } & Omit<t.OAuthConnectionOptions, 'useOAuth'>): Promise<MCPConnection> {
-    const userId = user.id;
+    const userId = user?.id;
     if (!userId) {
       throw new McpError(ErrorCode.InvalidRequest, `[MCP] User object missing id property`);
     }
 
-    if (this.appConnections!.has(serverName)) {
+    if (await this.appConnections!.has(serverName)) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `[MCP][User: ${userId}] Trying to create user-specific connection for app-level server "${serverName}"`,
       );
     }
+
+    const config = await MCPServersRegistry.getInstance().getServerConfig(serverName, userId);
 
     const userServerMap = this.userConnections.get(userId);
     let connection = forceNew ? undefined : userServerMap?.get(serverName);
@@ -77,7 +79,15 @@ export abstract class UserConnectionManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (await connection.isConnected()) {
+      if (!config || (config.updatedAt && connection.isStale(config.updatedAt))) {
+        if (config) {
+          logger.info(
+            `[MCP][User: ${userId}][${serverName}] Config was updated, disconnecting stale connection`,
+          );
+        }
+        await this.disconnectUserConnection(userId, serverName);
+        connection = undefined;
+      } else if (await connection.isConnected()) {
         logger.debug(`[MCP][User: ${userId}][${serverName}] Reusing active connection`);
         this.updateUserLastActivity(userId);
         return connection;
@@ -91,12 +101,7 @@ export abstract class UserConnectionManager {
       }
     }
 
-    // If no valid connection exists, create a new one
-    if (!connection) {
-      logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
-    }
-
-    const config = await serversRegistry.getServerConfig(serverName, userId);
+    // Now check if config exists for new connection creation
     if (!config) {
       throw new McpError(
         ErrorCode.InvalidRequest,
@@ -104,11 +109,15 @@ export abstract class UserConnectionManager {
       );
     }
 
+    // If no valid connection exists, create a new one
+    logger.info(`[MCP][User: ${userId}][${serverName}] Establishing new connection`);
+
     try {
       connection = await MCPConnectionFactory.create(
         {
           serverName: serverName,
           serverConfig: config,
+          useSSRFProtection: MCPServersRegistry.getInstance().shouldEnableSSRFProtection(),
         },
         {
           useOAuth: true,
