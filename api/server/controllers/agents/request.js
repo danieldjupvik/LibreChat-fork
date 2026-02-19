@@ -13,6 +13,7 @@ const { disposeClient, clientRegistry, requestDataMap } = require('~/server/clea
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage } = require('~/models');
+const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
 
 function createCloseHandler(abortController) {
   return function (manual) {
@@ -239,6 +240,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         };
 
         const response = await client.sendMessage(text, messageOptions);
+        await syncResponseUsage({ client, response });
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
@@ -251,6 +253,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+        // Fire-and-forget: enrich with cost metadata and persist to DB without blocking the SSE final event.
+        // Token counts are already set on the response from the non-persist call above.
+        syncResponseUsage({ client, response, req, persist: true }).catch((error) => {
+          logger.warn('[ResumableAgentController] Background usage sync failed', {
+            messageId: response?.messageId,
+            error: error?.message,
+          });
+        });
 
         if (req.body.files && client.options?.attachments) {
           userMessage.files = [];

@@ -273,7 +273,10 @@ export async function createRun({
       customProviders.has(agent.provider) ||
       (agent.provider === Providers.OPENAI && agent.endpoint !== agent.provider)
     ) {
-      llmConfig.streamUsage = false;
+      /** Skip disabling streamUsage for LiteLLM endpoints (they support stream usage) */
+      if (!agent.endpoint?.toLowerCase().includes('litellm')) {
+        llmConfig.streamUsage = false;
+      }
       llmConfig.usage = true;
     }
 

@@ -22,9 +22,10 @@ router.get('/model-info', async (req, res) => {
     const baseURL = process.env.LITELLM_BASE_URL || 'https://litellm.danieldjupvik.com';
     const response = await axios.get(`${baseURL}/model/info`, {
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
+      timeout: 5000,
     });
 
     // Cache header to reduce load on LiteLLM service
@@ -39,7 +40,9 @@ router.get('/model-info', async (req, res) => {
     if (error.response) {
       // The request was made and the server responded with a status code
       // that falls out of the range of 2xx
-      logger.error(`Failed to fetch LiteLLM model info: ${error.response.status} ${error.response.statusText}`);
+      logger.error(
+        `Failed to fetch LiteLLM model info: ${error.response.status} ${error.response.statusText}`,
+      );
       return res.status(error.response.status).json({
         error: 'Failed to fetch model information',
         status: error.response.status,
