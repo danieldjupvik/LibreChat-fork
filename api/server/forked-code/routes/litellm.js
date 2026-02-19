@@ -64,4 +64,38 @@ router.get('/model-info', async (req, res) => {
   }
 });
 
+/**
+ * Proxy endpoint to fetch cost margin config from LiteLLM
+ *
+ * @route GET /api/forked/litellm/cost-margin
+ * @returns {object} { margin: number } — global margin as a decimal (e.g. 0.15 = 15%)
+ */
+router.get('/cost-margin', async (req, res) => {
+  try {
+    const apiKey = process.env.LITELLM_API_KEY;
+
+    if (!apiKey) {
+      return res.json({ margin: 0 });
+    }
+
+    const baseURL = process.env.LITELLM_BASE_URL || 'https://litellm.danieldjupvik.com';
+    const response = await axios.get(`${baseURL}/config/cost_margin_config`, {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    });
+
+    const global = response.data?.values?.global;
+    const margin = typeof global === 'number' && Number.isFinite(global) ? global : 0;
+
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return res.json({ margin });
+  } catch (error) {
+    logger.error('Error fetching LiteLLM cost margin config:', error?.message);
+    return res.status(502).json({ error: 'Failed to fetch cost margin config' });
+  }
+});
+
 module.exports = router;
