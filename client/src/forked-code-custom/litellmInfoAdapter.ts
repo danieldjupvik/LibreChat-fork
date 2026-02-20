@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
 import type { TModelSpec } from 'librechat-data-provider';
 
 // Type definitions for LiteLLM API response
@@ -113,8 +114,11 @@ export const fetchLiteLLMModelInfo = async (): Promise<Record<string, LiteLLMMod
   }
 
   try {
-    // Use our secure server-side proxy
-    const response = await fetch('/api/forked/litellm/model-info');
+    // Use our secure server-side proxy (include auth header for requireJwtAuth)
+    const authHeader = axios.defaults.headers.common['Authorization'] as string | undefined;
+    const response = await fetch('/api/forked/litellm/model-info', {
+      headers: authHeader ? { Authorization: authHeader } : {},
+    });
 
     if (!response.ok) {
       throw new Error(`Failed to fetch model info: ${response.status}`);
@@ -163,7 +167,10 @@ export const fetchCostMargin = async (): Promise<number> => {
     return marginInflight;
   }
 
-  marginInflight = fetch('/api/forked/litellm/cost-margin')
+  const authHeader = axios.defaults.headers.common['Authorization'] as string | undefined;
+  marginInflight = fetch('/api/forked/litellm/cost-margin', {
+    headers: authHeader ? { Authorization: authHeader } : {},
+  })
     .then(async (res) => {
       if (!res.ok) {
         return 0;
