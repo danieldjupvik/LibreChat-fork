@@ -25,51 +25,48 @@ jobs:
           git remote add upstream https://github.com/danny-avila/LibreChat.git || true
           git fetch upstream
 
-      - name: Check for merge conflicts
-        id: check_conflicts
-        run: |
-          if git merge-tree $(git merge-base HEAD upstream/main) HEAD upstream/main | grep -e "^<<<<<<< " -e "^=======$" -e "^>>>>>>> "; then
-            echo "conflicts=true" >> $GITHUB_OUTPUT
-          else
-            echo "conflicts=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Merge Upstream Changes
+      - name: Try merge
         id: merge
-        if: steps.check_conflicts.outputs.conflicts == 'false'
         run: |
-          # Get current commit hash
-          CURRENT_HASH=$(git rev-parse HEAD)
-
-          # Attempt merge
-          git merge upstream/main -m "Sync upstream changes"
-
-          # Get new commit hash
-          NEW_HASH=$(git rev-parse HEAD)
-
-          # Check if anything changed
-          if [ "$CURRENT_HASH" != "$NEW_HASH" ]; then
-            echo "Changes were merged successfully"
-            echo "changes_merged=true" >> $GITHUB_OUTPUT
-            git push origin HEAD:main
+          if git merge --no-commit --no-ff upstream/main 2>&1; then
+            if [ ! -f .git/MERGE_HEAD ]; then
+              echo "No new changes to merge"
+              echo "result=no_changes" >> $GITHUB_OUTPUT
+            else
+              git commit -m "Sync upstream changes"
+              git push origin HEAD:main
+              echo "Changes were merged successfully"
+              echo "result=merged" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "No new changes to merge"
-            echo "changes_merged=false" >> $GITHUB_OUTPUT
+            echo "Merge has conflicts"
+            echo "result=conflicts" >> $GITHUB_OUTPUT
+            git merge --abort
           fi
 
       - name: Trigger Build Workflow
-        if: steps.merge.outputs.changes_merged == 'true'
+        if: steps.merge.outputs.result == 'merged'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.WORKFLOW_TOKEN }}
           event-type: upstream-changes-merged
 
       - name: Create PR for conflicted changes
-        if: steps.check_conflicts.outputs.conflicts == 'true'
+        if: steps.merge.outputs.result == 'conflicts'
         run: |
-          git checkout -b upstream-sync-$(date +%Y%m%d)
-          git merge upstream/main || true
-          git push origin upstream-sync-$(date +%Y%m%d)
-          gh pr create --title "Upstream Sync (Conflicts to Resolve)" --body "This PR contains upstream changes that resulted in conflicts. Please resolve manually." --base main --head upstream-sync-$(date +%Y%m%d)
+          EXISTING_PR=$(gh pr list --base main --search "Upstream Sync" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Open upstream sync PR already exists: #$EXISTING_PR, skipping"
+            exit 0
+          fi
+
+          BRANCH="upstream-sync-$(date +%Y%m%d-%H%M)"
+          git checkout -b "$BRANCH" upstream/main
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Upstream Sync (Conflicts to Resolve)" \
+            --body "This PR merges upstream changes that conflict with our fork. Please resolve conflicts via the GitHub UI or locally." \
+            --base main \
+            --head "$BRANCH"
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
