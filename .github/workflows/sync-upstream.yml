@@ -75,7 +75,9 @@ jobs:
           **Files with conflict markers that need manual resolution:**
           ${CONFLICTED_FILES}
 
-          Search for \`<<<<<<<\` in the changed files and resolve each conflict."
+          Search for \`<<<<<<<\` in the changed files and resolve each conflict.
+
+          @coderabbitai ignore"
 
           gh pr create \
             --repo "$GITHUB_REPOSITORY" \
