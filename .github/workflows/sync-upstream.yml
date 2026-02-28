@@ -61,12 +61,29 @@ jobs:
           fi
 
           BRANCH="upstream-sync-$(date +%Y%m%d-%H%M)"
-          git checkout -b "$BRANCH" upstream/main
-          git push origin "$BRANCH"
+          HEAD_REF="${GITHUB_REPOSITORY_OWNER}:${BRANCH}"
+
+          git checkout -b "$BRANCH"
+          git merge --squash upstream/main || true
+          git add -A
+          git commit -m "Upstream sync (conflicts to resolve)"
+          git push -u origin "$BRANCH"
+
+          CONFLICTED_FILES=$(git diff HEAD~1 --name-only | sed 's/^/- /')
+          BODY="This PR merges upstream changes that conflict with our fork.
+
+          **Files with conflict markers that need manual resolution:**
+          ${CONFLICTED_FILES}
+
+          Search for \`<<<<<<<\` in the changed files and resolve each conflict.
+
+          @coderabbitai ignore"
+
           gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
             --title "Upstream Sync (Conflicts to Resolve)" \
-            --body "This PR merges upstream changes that conflict with our fork. Please resolve conflicts via the GitHub UI or locally." \
+            --body "$BODY" \
             --base main \
-            --head "$BRANCH"
+            --head "$HEAD_REF"
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
