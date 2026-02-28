@@ -1,11 +1,6 @@
 import { useState, memo, useRef } from 'react';
-<<<<<<< HEAD
-import * as Select from '@ariakit/react/select';
-import { FileText, LogOut, User } from 'lucide-react';
-=======
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut } from 'lucide-react';
->>>>>>> upstream/main
+import { FileText, LogOut, User } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
@@ -80,10 +75,8 @@ function AccountSettings() {
         <Menu.MenuItem onClick={() => setShowSettings(true)} className="select-item text-sm">
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
-<<<<<<< HEAD
-        </Select.SelectItem>
-        <Select.SelectItem
-          value=""
+        </Menu.MenuItem>
+        <Menu.MenuItem
           onClick={() =>
             window.open(`https://profile.danieldjupvik.com/?email=${user?.email}`, '_blank')
           }
@@ -91,10 +84,7 @@ function AccountSettings() {
         >
           <User className="icon-md" />
           {'Profile'}
-        </Select.SelectItem>
-=======
         </Menu.MenuItem>
->>>>>>> upstream/main
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />
