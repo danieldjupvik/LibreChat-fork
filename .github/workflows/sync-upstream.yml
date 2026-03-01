@@ -64,7 +64,7 @@ jobs:
           HEAD_REF="${GITHUB_REPOSITORY_OWNER}:${BRANCH}"
 
           git checkout -b "$BRANCH"
-          git merge --squash upstream/main || true
+          git merge upstream/main || true
           git add -A
           git commit -m "Upstream sync (conflicts to resolve)"
           git push -u origin "$BRANCH"
