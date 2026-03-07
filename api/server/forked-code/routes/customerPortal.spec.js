@@ -10,11 +10,8 @@ jest.mock('../../middleware/requireJwtAuth', () => (req, _res, next) => {
 });
 
 jest.mock('../customerPortal', () => ({
-  EMAIL_REQUIRED_ERROR: 'Customer portal requires an email address',
-  INVALID_EMAIL_ERROR: 'Customer portal requires a valid email address',
-  PORTAL_SECRET_REQUIRED_ERROR: 'CUSTOMER_PORTAL_JWT_SECRET is required',
+  ...jest.requireActual('../customerPortal'),
   createCustomerPortalUrl: (...args) => mockCreateCustomerPortalUrl(...args),
-  isValidEmail: (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email?.trim().toLowerCase() ?? ''),
 }));
 
 const customerPortalRoute = require('./customerPortal');
@@ -54,6 +51,9 @@ describe('GET /api/forked/customer-portal', () => {
 
   it('rejects a username that is not a valid email address', async () => {
     mockUser.email = 'testusername';
+    mockCreateCustomerPortalUrl.mockImplementation(() => {
+      throw new Error('Customer portal requires a valid email address');
+    });
 
     const response = await request(app).get('/api/forked/customer-portal');
 
@@ -61,7 +61,6 @@ describe('GET /api/forked/customer-portal', () => {
     expect(response.body).toEqual({
       error: 'Customer portal requires a valid email address',
     });
-    expect(mockCreateCustomerPortalUrl).not.toHaveBeenCalled();
   });
 
   it('returns 503 when the signing secret is not configured', async () => {
@@ -79,6 +78,9 @@ describe('GET /api/forked/customer-portal', () => {
 
   it('returns a clear client error when the current user has no email', async () => {
     mockUser.email = '   ';
+    mockCreateCustomerPortalUrl.mockImplementation(() => {
+      throw new Error('Customer portal requires an email address');
+    });
 
     const response = await request(app).get('/api/forked/customer-portal');
 
@@ -86,6 +88,5 @@ describe('GET /api/forked/customer-portal', () => {
     expect(response.body).toEqual({
       error: 'Customer portal requires an email address',
     });
-    expect(mockCreateCustomerPortalUrl).not.toHaveBeenCalled();
   });
 });

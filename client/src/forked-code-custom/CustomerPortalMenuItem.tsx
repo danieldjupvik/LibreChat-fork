@@ -50,13 +50,12 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
         window.location.href = url;
       }
     } catch (error) {
-      newWindow?.close();
-
       const message =
         error instanceof Error && error.message
           ? error.message
           : 'Unable to open the customer portal right now.';
 
+      newWindow?.close();
       showToast({ message, status: 'error' });
     } finally {
       setIsOpeningProfile(false);

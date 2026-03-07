@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const EMAIL_REQUIRED_ERROR = 'Customer portal requires an email address';
 const INVALID_EMAIL_ERROR = 'Customer portal requires a valid email address';
 const PORTAL_SECRET_REQUIRED_ERROR = 'CUSTOMER_PORTAL_JWT_SECRET is required';
-const CUSTOMER_PORTAL_URL = 'https://profile.danieldjupvik.com';
+const CUSTOMER_PORTAL_URL = process.env.CUSTOMER_PORTAL_URL || 'https://profile.danieldjupvik.com';
 
 // Intentionally loose — just requires `local@domain` structure
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
