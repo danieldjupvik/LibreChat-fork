@@ -1,9 +1,10 @@
 import { useState, memo, useRef } from 'react';
 import * as Menu from '@ariakit/react/menu';
-import { FileText, LogOut, User } from 'lucide-react';
+import { FileText, LogOut } from 'lucide-react';
 import { LinkIcon, GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import CustomerPortalMenuItem from '~/forked-code-custom/CustomerPortalMenuItem';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
@@ -76,15 +77,7 @@ function AccountSettings() {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
-        <Menu.MenuItem
-          onClick={() =>
-            window.open(`https://profile.danieldjupvik.com/?email=${user?.email}`, '_blank')
-          }
-          className="select-item text-sm"
-        >
-          <User className="icon-md" />
-          {'Profile'}
-        </Menu.MenuItem>
+        <CustomerPortalMenuItem email={user?.email} />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
           <LogOut className="icon-md" aria-hidden="true" />
