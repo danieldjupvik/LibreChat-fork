@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import copy from 'copy-to-clipboard';
 import * as Menu from '@ariakit/react/menu';
 import { User } from 'lucide-react';
-import { useToastContext } from '@librechat/client';
+import { TooltipAnchor, useToastContext } from '@librechat/client';
 import { getCustomerPortalUrl } from './customerPortal';
 
 type CustomerPortalMenuItemProps = {
@@ -12,8 +13,9 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
   const { showToast } = useToastContext();
   const [isOpeningProfile, setIsOpeningProfile] = useState(false);
   const canOpenProfile = Boolean(email?.trim());
+  const modifierKey = /mac|iphone|ipad/i.test(navigator.userAgent) ? '⌘' : 'Ctrl';
 
-  const handleProfileClick = async () => {
+  const handleProfileClick = async (event: React.MouseEvent) => {
     if (!canOpenProfile) {
       showToast({
         message: 'Your account needs an email address before opening the customer portal.',
@@ -22,12 +24,24 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
       return;
     }
 
-    // Open the tab synchronously so the click gesture satisfies popup-blocker rules
-    const newWindow = window.open('about:blank', '_blank');
+    const wantsCopy = event.metaKey || event.ctrlKey;
+
+    // Only open a tab when not copying — avoids a blank tab flash
+    const newWindow = wantsCopy ? null : window.open('about:blank', '_blank');
 
     try {
       setIsOpeningProfile(true);
       const url = await getCustomerPortalUrl();
+
+      if (wantsCopy) {
+        if (copy(url)) {
+          showToast({ message: 'Portal link copied to clipboard', status: 'success' });
+        } else {
+          showToast({ message: 'Unable to copy — opening portal instead', status: 'warning' });
+          window.open(url, '_blank', 'noopener,noreferrer');
+        }
+        return;
+      }
 
       if (newWindow) {
         newWindow.opener = null;
@@ -50,13 +64,19 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
   };
 
   return (
-    <Menu.MenuItem
-      onClick={handleProfileClick}
-      disabled={isOpeningProfile || !canOpenProfile}
-      className="select-item text-sm"
+    <TooltipAnchor
+      description={`${modifierKey}+click to copy link`}
+      side="left"
+      render={
+        <Menu.MenuItem
+          onClick={handleProfileClick}
+          disabled={isOpeningProfile || !canOpenProfile}
+          className="select-item text-sm"
+        />
+      }
     >
       <User className="icon-md" />
       {'Profile'}
-    </Menu.MenuItem>
+    </TooltipAnchor>
   );
 }

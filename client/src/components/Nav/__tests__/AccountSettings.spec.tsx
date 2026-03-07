@@ -1,11 +1,12 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
-import { render, screen, waitFor } from '../../../../test/layout-test-utils';
+import { fireEvent, render, screen, waitFor } from '../../../../test/layout-test-utils';
 import AccountSettings from '../AccountSettings';
 
 const mockShowToast = jest.fn();
 const mockGetCustomerPortalUrl = jest.fn();
 const mockUseAuthContext = jest.fn();
+const mockCopy = jest.fn();
 
 jest.mock('@ariakit/react/menu', () => ({
   MenuProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -32,6 +33,16 @@ jest.mock('@librechat/client', () => ({
   DropdownMenuSeparator: () => <div data-testid="separator" />,
   GearIcon: () => <span data-testid="gear-icon" />,
   LinkIcon: () => <span data-testid="link-icon" />,
+  TooltipAnchor: ({
+    render,
+    children,
+  }: {
+    render: React.ReactElement;
+    children: React.ReactNode;
+  }) => {
+    const Comp = render.type as React.ElementType;
+    return <Comp {...render.props}>{children}</Comp>;
+  },
   useToastContext: () => ({
     showToast: mockShowToast,
   }),
@@ -80,6 +91,13 @@ jest.mock('~/forked-code-custom/customerPortal', () => ({
   getCustomerPortalUrl: (...args: unknown[]) => mockGetCustomerPortalUrl(...args),
 }));
 
+jest.mock(
+  'copy-to-clipboard',
+  () =>
+    (...args: unknown[]) =>
+      mockCopy(...args),
+);
+
 describe('AccountSettings', () => {
   const windowOpen = jest.fn();
 
@@ -115,9 +133,29 @@ describe('AccountSettings', () => {
     // Blank tab opened synchronously to satisfy popup-blocker rules
     expect(windowOpen).toHaveBeenCalledWith('about:blank', '_blank');
     expect(mockNewWindow.opener).toBeNull();
-    expect(mockNewWindow.location.href).toBe(
+    expect(mockNewWindow.location.href).toBe('https://profile.danieldjupvik.com/?token=jwt-token');
+  });
+
+  it('copies the portal URL to clipboard on ⌘+click instead of opening a tab', async () => {
+    mockCopy.mockReturnValue(true);
+    mockGetCustomerPortalUrl.mockResolvedValue(
       'https://profile.danieldjupvik.com/?token=jwt-token',
     );
+
+    render(<AccountSettings />);
+
+    const profileButton = screen.getByRole('button', { name: 'Profile' });
+    fireEvent.click(profileButton, { metaKey: true });
+
+    await waitFor(() => {
+      expect(mockCopy).toHaveBeenCalledWith('https://profile.danieldjupvik.com/?token=jwt-token');
+    });
+
+    expect(windowOpen).not.toHaveBeenCalled();
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'Portal link copied to clipboard',
+      status: 'success',
+    });
   });
 
   it('does not generate a portal URL when the current user has no email', async () => {
