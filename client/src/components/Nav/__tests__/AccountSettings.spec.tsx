@@ -6,7 +6,7 @@ import AccountSettings from '../AccountSettings';
 const mockShowToast = jest.fn();
 const mockGetCustomerPortalUrl = jest.fn();
 const mockUseAuthContext = jest.fn();
-const mockCopy = jest.fn();
+const mockClipboardWrite = jest.fn();
 
 jest.mock('@ariakit/react/menu', () => ({
   MenuProvider: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -91,13 +91,6 @@ jest.mock('~/forked-code-custom/customerPortal', () => ({
   getCustomerPortalUrl: (...args: unknown[]) => mockGetCustomerPortalUrl(...args),
 }));
 
-jest.mock(
-  'copy-to-clipboard',
-  () =>
-    (...args: unknown[]) =>
-      mockCopy(...args),
-);
-
 describe('AccountSettings', () => {
   const windowOpen = jest.fn();
 
@@ -112,6 +105,15 @@ describe('AccountSettings', () => {
       logout: jest.fn(),
     });
     window.open = windowOpen;
+    mockClipboardWrite.mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write: mockClipboardWrite },
+      configurable: true,
+    });
+    // jsdom lacks ClipboardItem — provide a minimal stand-in
+    globalThis.ClipboardItem = class {
+      constructor(public data: Record<string, Blob | Promise<Blob>>) {}
+    } as unknown as typeof ClipboardItem;
   });
 
   it('opens the customer portal URL in a new window when Profile is clicked', async () => {
@@ -137,7 +139,6 @@ describe('AccountSettings', () => {
   });
 
   it('copies the portal URL to clipboard on ⌘+click instead of opening a tab', async () => {
-    mockCopy.mockReturnValue(true);
     mockGetCustomerPortalUrl.mockResolvedValue(
       'https://profile.danieldjupvik.com/?token=jwt-token',
     );
@@ -148,7 +149,7 @@ describe('AccountSettings', () => {
     fireEvent.click(profileButton, { metaKey: true });
 
     await waitFor(() => {
-      expect(mockCopy).toHaveBeenCalledWith('https://profile.danieldjupvik.com/?token=jwt-token');
+      expect(mockClipboardWrite).toHaveBeenCalledTimes(1);
     });
 
     expect(windowOpen).not.toHaveBeenCalled();

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import copy from 'copy-to-clipboard';
 import * as Menu from '@ariakit/react/menu';
 import { User } from 'lucide-react';
 import { TooltipAnchor, useToastContext } from '@librechat/client';
@@ -13,6 +12,8 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
   const { showToast } = useToastContext();
   const [isOpeningProfile, setIsOpeningProfile] = useState(false);
   const canOpenProfile = Boolean(email?.trim());
+  const canCopyToClipboard =
+    typeof ClipboardItem !== 'undefined' && typeof navigator.clipboard?.write === 'function';
   const modifierKey = /mac|iphone|ipad/i.test(navigator.userAgent) ? '⌘' : 'Ctrl';
 
   const handleProfileClick = async (event: React.MouseEvent) => {
@@ -24,24 +25,37 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
       return;
     }
 
-    const wantsCopy = event.metaKey || event.ctrlKey;
+    const wantsCopy = (event.metaKey || event.ctrlKey) && canCopyToClipboard;
 
-    // Only open a tab when not copying — avoids a blank tab flash
-    const newWindow = wantsCopy ? null : window.open('about:blank', '_blank');
+    if (wantsCopy) {
+      // Call clipboard.write() synchronously within the click gesture so Safari
+      // considers it user-activated. The blob data resolves later via the promise.
+      const urlPromise = getCustomerPortalUrl();
+      const item = new ClipboardItem({
+        'text/plain': urlPromise.then((url) => new Blob([url], { type: 'text/plain' })),
+      });
+
+      try {
+        setIsOpeningProfile(true);
+        await navigator.clipboard.write([item]);
+        showToast({ message: 'Portal link copied to clipboard', status: 'success' });
+      } catch {
+        showToast({
+          message: 'Could not copy link. Click Profile again without holding the modifier key.',
+          status: 'error',
+        });
+      } finally {
+        setIsOpeningProfile(false);
+      }
+      return;
+    }
+
+    // Non-copy path: open tab synchronously to satisfy popup-blocker rules
+    const newWindow = window.open('about:blank', '_blank');
 
     try {
       setIsOpeningProfile(true);
       const url = await getCustomerPortalUrl();
-
-      if (wantsCopy) {
-        if (copy(url)) {
-          showToast({ message: 'Portal link copied to clipboard', status: 'success' });
-        } else {
-          showToast({ message: 'Unable to copy — opening portal instead', status: 'warning' });
-          window.open(url, '_blank', 'noopener,noreferrer');
-        }
-        return;
-      }
 
       if (newWindow) {
         newWindow.opener = null;
@@ -61,6 +75,21 @@ export default function CustomerPortalMenuItem({ email }: CustomerPortalMenuItem
       setIsOpeningProfile(false);
     }
   };
+
+  const menuItem = (
+    <Menu.MenuItem
+      onClick={handleProfileClick}
+      disabled={isOpeningProfile || !canOpenProfile}
+      className="select-item text-sm"
+    >
+      <User className="icon-md" />
+      {'Profile'}
+    </Menu.MenuItem>
+  );
+
+  if (!canCopyToClipboard) {
+    return menuItem;
+  }
 
   return (
     <TooltipAnchor
