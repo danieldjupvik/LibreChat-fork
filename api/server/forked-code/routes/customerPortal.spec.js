@@ -76,6 +76,19 @@ describe('GET /api/forked/customer-portal', () => {
     });
   });
 
+  it('returns 500 for unexpected errors', async () => {
+    mockCreateCustomerPortalUrl.mockImplementation(() => {
+      throw new Error('Unexpected database failure');
+    });
+
+    const response = await request(app).get('/api/forked/customer-portal');
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({
+      error: 'Failed to create customer portal URL',
+    });
+  });
+
   it('returns a clear client error when the current user has no email', async () => {
     mockUser.email = '   ';
     mockCreateCustomerPortalUrl.mockImplementation(() => {
