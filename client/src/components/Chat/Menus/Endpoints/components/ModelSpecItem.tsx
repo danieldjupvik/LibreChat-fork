@@ -28,6 +28,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
     e.stopPropagation();
     toggleFavoriteSpec(spec.name);
   };
+
   return (
     <MenuItem
       ref={itemRef}
