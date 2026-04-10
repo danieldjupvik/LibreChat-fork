@@ -5,6 +5,10 @@ on:
     - cron: '0 */1 * * *' # Run every hour
   workflow_dispatch:
 
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -54,22 +58,25 @@ jobs:
       - name: Create PR for conflicted changes
         if: steps.merge.outputs.result == 'conflicts'
         run: |
-          EXISTING_PR=$(gh pr list --base main --search "Upstream Sync" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$EXISTING_PR" ]; then
-            echo "Open upstream sync PR already exists: #$EXISTING_PR, skipping"
-            exit 0
-          fi
-
-          BRANCH="upstream-sync-$(date +%Y%m%d-%H%M)"
+          BRANCH="upstream-sync-conflicts"
           HEAD_REF="${GITHUB_REPOSITORY_OWNER}:${BRANCH}"
+          EXISTING_PR=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --base main \
+            --head "$BRANCH" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
 
-          git checkout -b "$BRANCH"
+          git fetch origin "$BRANCH" || true
+          git branch -D "$BRANCH" 2>/dev/null || true
+          git checkout -B "$BRANCH" main
           git merge upstream/main || true
+          CONFLICTED_FILES=$(git diff --name-only --diff-filter=U | sed 's/^/- /')
           git add -A
           git commit -m "Upstream sync (conflicts to resolve)"
-          git push -u origin "$BRANCH"
+          git push -u origin "$BRANCH" --force
 
-          CONFLICTED_FILES=$(git diff HEAD~1 --name-only | sed 's/^/- /')
           BODY="This PR merges upstream changes that conflict with our fork.
 
           **Files with conflict markers that need manual resolution:**
@@ -78,6 +85,11 @@ jobs:
           Search for \`<<<<<<<\` in the changed files and resolve each conflict.
 
           @coderabbitai ignore"
+
+          if [ -n "$EXISTING_PR" ]; then
+            echo "Open upstream sync PR already exists: #$EXISTING_PR, updated branch $BRANCH"
+            exit 0
+          fi
 
           gh pr create \
             --repo "$GITHUB_REPOSITORY" \
