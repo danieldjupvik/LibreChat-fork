@@ -28,6 +28,10 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
     e.stopPropagation();
     toggleFavoriteSpec(spec.name);
   };
+<<<<<<< HEAD
+=======
+
+>>>>>>> upstream/main
   return (
     <MenuItem
       ref={itemRef}
@@ -54,6 +58,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           <ModelBadges spec={spec} />
         </div>
       </div>
+<<<<<<< HEAD
 
       {/* Wrapper for capability icons and selected checkmark, aligned to top */}
       <div
@@ -63,6 +68,8 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         <CapabilityIcons capabilities={spec.iconCapabilities} />
       </div>
 
+=======
+>>>>>>> upstream/main
       <button
         type="button"
         tabIndex={isActive ? 0 : -1}
