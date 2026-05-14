@@ -1,3 +1,4 @@
+require('dotenv').config();
 const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
@@ -211,17 +212,12 @@ const startServer = async () => {
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
 
-<<<<<<< HEAD
   // Initialize forked code routes and extensions
   initForkedCode(app);
-=======
   app.use('/metrics', metricsRouter);
->>>>>>> upstream/main
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
-
-  app.use(ErrorController);
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use((req, res) => {

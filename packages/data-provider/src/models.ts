@@ -8,7 +8,12 @@ import {
   authTypeSchema,
 } from './schemas';
 
-export type ModelCapabilityType = 'reasoning' | 'upload_image' | 'web_search' | 'experimental' | 'deep_research';
+export type ModelCapabilityType =
+  | 'reasoning'
+  | 'upload_image'
+  | 'web_search'
+  | 'experimental'
+  | 'deep_research';
 
 export type TModelSpec = {
   name: string;
@@ -34,20 +39,17 @@ export type TModelSpec = {
   showIconInHeader?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
-<<<<<<< HEAD
   iconCapabilities?: ModelCapabilityType[];
   badges?: {
-    disabled?: boolean;         // Disable all badges for this model
-    inputPrice?: number;        // Input price per million tokens
-    outputPrice?: number;       // Output price per million tokens
-    showPricing?: boolean;      // Whether to show the pricing badges
-    isFree?: boolean;           // Whether the model is completely free to use
-    maxContextToken?: number;   // Maximum context window size in tokens
+    disabled?: boolean; // Disable all badges for this model
+    inputPrice?: number; // Input price per million tokens
+    outputPrice?: number; // Output price per million tokens
+    showPricing?: boolean; // Whether to show the pricing badges
+    isFree?: boolean; // Whether the model is completely free to use
+    maxContextToken?: number; // Maximum context window size in tokens
   };
-=======
   /** Hide the chat input tool badge row while this model spec is active. */
   hideBadgeRow?: boolean;
->>>>>>> upstream/main
   webSearch?: boolean;
   fileSearch?: boolean;
   executeCode?: boolean;
@@ -78,12 +80,11 @@ export const tModelSpecSchema = z.object({
   showIconInHeader: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
-<<<<<<< HEAD
-  iconCapabilities: z.array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research'])).optional(),
+  iconCapabilities: z
+    .array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research']))
+    .optional(),
   badges: badgesSchema.optional(),
-=======
   hideBadgeRow: z.boolean().optional(),
->>>>>>> upstream/main
   webSearch: z.boolean().optional(),
   fileSearch: z.boolean().optional(),
   executeCode: z.boolean().optional(),
