@@ -990,9 +990,10 @@ export async function createRun({
     graphConfig,
     tokenCounter,
     customHandlers,
-    indexTokenCountMap,
     initialSessions,
     calibrationRatio,
+    indexTokenCountMap,
+    eagerEventToolExecution: { enabled: true },
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },
     }),
