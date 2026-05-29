@@ -25,15 +25,11 @@ import { RouteGuard } from '~/forked-code-custom';
 
 const AuthLayout = () => (
   <AuthContextProvider>
-<<<<<<< HEAD
-    <RouteGuard>
-      <Outlet />
-    </RouteGuard>
-=======
     <WithRum>
-      <Outlet />
+      <RouteGuard>
+        <Outlet />
+      </RouteGuard>
     </WithRum>
->>>>>>> upstream/main
     <ApiErrorWatcher />
   </AuthContextProvider>
 );
