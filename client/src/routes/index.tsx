@@ -12,6 +12,7 @@ import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import WithRum from '~/lib/rum/WithRum';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
@@ -24,9 +25,15 @@ import { RouteGuard } from '~/forked-code-custom';
 
 const AuthLayout = () => (
   <AuthContextProvider>
+<<<<<<< HEAD
     <RouteGuard>
       <Outlet />
     </RouteGuard>
+=======
+    <WithRum>
+      <Outlet />
+    </WithRum>
+>>>>>>> upstream/main
     <ApiErrorWatcher />
   </AuthContextProvider>
 );
