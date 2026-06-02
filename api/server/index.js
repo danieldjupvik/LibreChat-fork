@@ -221,6 +221,7 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/rum', routes.rum);
 
   // Initialize forked code routes and extensions
   initForkedCode(app);
