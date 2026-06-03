@@ -354,13 +354,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           },
         };
 
-<<<<<<< HEAD
-        const response = await client.sendMessage(text, messageOptions);
-        // FORK-SENTINEL:sync-response-usage — set token/cost usage on the response before the final SSE event
-        await syncResponseUsage({ client, response });
-||||||| 268f095c1
-        const response = await client.sendMessage(text, messageOptions);
-=======
         const sendPromise = client.sendMessage(text, messageOptions);
 
         if (titleEligible && titleTiming === 'immediate') {
@@ -378,7 +371,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const response = await sendPromise;
->>>>>>> upstream/main
+        // FORK-SENTINEL:sync-response-usage — set token/cost usage on the response before the final SSE event
+        await syncResponseUsage({ client, response });
 
         const messageId = response.messageId;
         const endpoint = endpointOption.endpoint;
