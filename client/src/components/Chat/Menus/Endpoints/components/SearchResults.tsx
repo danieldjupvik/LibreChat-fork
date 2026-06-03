@@ -84,15 +84,17 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                   {spec.description && (
                     <span className="break-words text-xs font-normal">{spec.description}</span>
                   )}
-                  <ModelBadges
-                    spec={spec}
-                  />
+                  {/* FORK-SENTINEL:searchresults-badges — fork-only model badges in endpoint search results */}
+                  <ModelBadges spec={spec} />
                 </div>
               </div>
-              {/* Wrapper for capability icons and selected checkmark, aligned to top */}
+              {/* FORK-SENTINEL:searchresults-capabilities — fork-only capability icons in endpoint search results */}
               <div
                 className="flex flex-shrink-0 gap-2 py-1"
-                style={{ alignSelf: 'flex-start', marginRight: selectedSpec === spec.name ? '0' : '24px' }}
+                style={{
+                  alignSelf: 'flex-start',
+                  marginRight: selectedSpec === spec.name ? '0' : '24px',
+                }}
               >
                 <CapabilityIcons capabilities={spec.iconCapabilities} />
               </div>
@@ -263,4 +265,3 @@ export function renderSearchResults(
     />
   );
 }
-

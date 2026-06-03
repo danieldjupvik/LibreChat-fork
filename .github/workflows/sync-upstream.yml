@@ -2,100 +2,165 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 */1 * * *' # Run every hour
+    - cron: '0 */1 * * *' # hourly
   workflow_dispatch:
 
 concurrency:
   group: sync-upstream
   cancel-in-progress: false
 
+env:
+  UPSTREAM_REPO: https://github.com/danny-avila/LibreChat.git
+  CONFLICT_BRANCH: upstream-sync-conflicts
+  CONFLICT_LABEL: upstream-sync-conflict
+
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.WORKFLOW_TOKEN }}
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Configure git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+          # zdiff3 puts the common ancestor inside conflict markers, so a
+          # human/agent resolving the PR sees fork / base / upstream.
+          git config merge.conflictStyle zdiff3
 
-      - name: Add Upstream Remote and Fetch
+      - name: Sync upstream
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}
         run: |
-          git remote add upstream https://github.com/danny-avila/LibreChat.git || true
-          git fetch upstream
+          set -euo pipefail
 
-      - name: Try merge
-        id: merge
-        run: |
-          if git merge --no-commit --no-ff upstream/main 2>&1; then
-            if [ ! -f .git/MERGE_HEAD ]; then
-              echo "No new changes to merge"
-              echo "result=no_changes" >> $GITHUB_OUTPUT
-            else
-              git commit -m "Sync upstream changes"
-              git push origin HEAD:main
-              echo "Changes were merged successfully"
-              echo "result=merged" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "Merge has conflicts"
-            echo "result=conflicts" >> $GITHUB_OUTPUT
-            git merge --abort
+          # --- Serialize guard: never touch an open conflict PR. ---
+          # While one is open, the branch is owned by whoever is resolving it;
+          # regenerating/force-pushing would clobber their work. Sync resumes
+          # automatically once the PR is merged or closed.
+          # Detect by HEAD BRANCH (always set), not label — labeling could fail
+          # to apply, which must never silently re-enable the clobbering force-push.
+          OPEN_PR=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head "$CONFLICT_BRANCH" --json number --jq '.[0].number // empty')
+          if [ -n "$OPEN_PR" ]; then
+            echo "Open conflict PR #$OPEN_PR exists — pausing sync until resolved."
+            echo "result=paused" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Trigger Build Workflow
-        if: steps.merge.outputs.result == 'merged'
+          git remote add upstream "$UPSTREAM_REPO" 2>/dev/null || true
+          git fetch upstream
+
+          # --- Attempt the merge without committing. ---
+          set +e
+          git merge --no-commit --no-ff upstream/main
+          MERGE_RC=$?
+          set -e
+
+          if [ ! -f .git/MERGE_HEAD ] && [ "$MERGE_RC" -eq 0 ]; then
+            echo "No new upstream changes."
+            echo "result=no_changes" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$MERGE_RC" -eq 0 ]; then
+            # Clean text-merge. Guard against a silently-dropped fork edit
+            # before letting it reach main unreviewed.
+            if bash .fork/verify-sentinels.sh > /tmp/sentinel-report.txt 2>&1; then
+              git commit -m "Sync upstream changes"
+              git push origin HEAD:main
+              echo "Clean merge pushed to main."
+              echo "result=merged" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            REASON="dropped-sentinel"
+          else
+            REASON="conflict-markers"
+          fi
+
+          echo "Escalating to a conflict PR (reason: $REASON)."
+          CONFLICTED_FILES="$(git diff --name-only --diff-filter=U || true)"
+          UPSTREAM_SHA="$(git rev-parse --short upstream/main)"
+
+          # Capture unmerged paths that carry NO text conflict markers (binary,
+          # modify/delete, rename, etc.). `git add -A` stages one side of these and
+          # hides them from the guard's marker scan, which would let an unresolved
+          # upstream conflict merge silently. Record them so the guard can block.
+          MARKERLESS=""
+          while IFS= read -r p; do
+            [ -z "$p" ] && continue
+            if ! grep -qE '^(<{7}|>{7})' "$p" 2>/dev/null; then
+              st="$(git status --porcelain -- "$p" | head -1)"
+              [ -n "$st" ] && MARKERLESS="${MARKERLESS}${st}"$'\n'
+            fi
+          done < <(git ls-files -u | cut -f2 | sort -u)
+
+          # Commit the in-progress merge (markers and all) as a real 2-parent
+          # merge commit, so resolving + merging this PR records upstream as
+          # merged and the next run does not re-conflict the same commits.
+          git add -A
+          if [ -n "$MARKERLESS" ]; then
+            {
+              echo "# Upstream-sync conflicts with NO text markers (binary / modify-delete / rename, etc.)."
+              echo "# git could not write conflict markers, so 'git add -A' auto-staged one side of each."
+              echo "# Reconcile each path (upstream vs fork intent), then DELETE this file."
+              echo "# CI (sync-pr-guard) blocks merge while this file exists. Lines are 'git status' codes:"
+              printf '%s' "$MARKERLESS"
+            } > .fork/UNRESOLVED-CONFLICTS.txt
+            git add .fork/UNRESOLVED-CONFLICTS.txt
+          fi
+          git commit -m "Upstream sync — needs resolution ($REASON)"
+          git branch -f "$CONFLICT_BRANCH" HEAD
+          # Force is safe here: the guard above proved no open PR owns this branch.
+          git push -f origin "$CONFLICT_BRANCH"
+
+          {
+            echo "Automated upstream sync reached a state that needs human/agent resolution."
+            echo
+            echo "**Reason:** \`$REASON\`"
+            echo "**Upstream merged up to:** \`$UPSTREAM_SHA\`"
+            echo
+            if [ "$REASON" = "conflict-markers" ]; then
+              echo "**Files with conflict markers:**"
+              echo "$CONFLICTED_FILES" | sed 's/^/- /'
+              echo
+              echo "Markers use the \`zdiff3\` style: the common-ancestor base sits between \`|||||||\` and \`=======\`, so you can see fork vs. base vs. upstream."
+            else
+              echo "**A registered fork change disappeared during a clean text-merge:**"
+              echo '```'
+              cat /tmp/sentinel-report.txt
+              echo '```'
+              echo
+              echo "Upstream rewrote the surrounding code so git merged with no conflict but dropped the fork edit. Re-apply the fork change and its \`// FORK-SENTINEL:<id>\` marker."
+            fi
+            echo
+            echo "### How to resolve (safe for an agent given only this PR URL)"
+            echo "1. \`gh pr checkout <this PR number>\`"
+            echo "2. Resolve every conflict / re-apply the dropped edit. Preserve BOTH upstream's intent and the fork's. Never delete a \`FORK-SENTINEL:<id>\` marker."
+            echo "   - If \`.fork/UNRESOLVED-CONFLICTS.txt\` exists, those paths had **marker-less** conflicts (binary / modify-delete) auto-staged to one side — reconcile each, then **delete that file**."
+            echo "3. Commit and push. This PR is blocked from merging until: no conflict markers remain, no \`.fork/UNRESOLVED-CONFLICTS.txt\`, all fork sentinels are intact, and CI is green."
+            echo "4. **Merge with a merge commit — NOT squash or rebase.** This branch carries the 2-parent upstream merge commit; squashing or rebasing discards the upstream parent, so the same upstream commits get reprocessed and re-conflict on the next sync."
+            echo
+            echo "@coderabbitai ignore"
+          } > /tmp/pr-body.md
+
+          gh label create "$CONFLICT_LABEL" --color B60205 \
+            --description "Automated upstream sync needs resolution" 2>/dev/null || true
+          gh pr create --repo "$GITHUB_REPOSITORY" \
+            --base main --head "$CONFLICT_BRANCH" \
+            --title "Upstream Sync — Resolution Required ($REASON)" \
+            --body-file /tmp/pr-body.md \
+            --label "$CONFLICT_LABEL"
+          echo "result=conflict_pr" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger build workflow
+        if: steps.sync.outputs.result == 'merged'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.WORKFLOW_TOKEN }}
           event-type: upstream-changes-merged
-
-      - name: Create PR for conflicted changes
-        if: steps.merge.outputs.result == 'conflicts'
-        run: |
-          BRANCH="upstream-sync-conflicts"
-          HEAD_REF="${GITHUB_REPOSITORY_OWNER}:${BRANCH}"
-          EXISTING_PR=$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --base main \
-            --head "$BRANCH" \
-            --state open \
-            --json number \
-            --jq '.[0].number // empty')
-
-          git fetch origin "$BRANCH" || true
-          git branch -D "$BRANCH" 2>/dev/null || true
-          git checkout -B "$BRANCH" main
-          git merge upstream/main || true
-          CONFLICTED_FILES=$(git diff --name-only --diff-filter=U | sed 's/^/- /')
-          git add -A
-          git commit -m "Upstream sync (conflicts to resolve)"
-          git push -u origin "$BRANCH" --force
-
-          BODY="This PR merges upstream changes that conflict with our fork.
-
-          **Files with conflict markers that need manual resolution:**
-          ${CONFLICTED_FILES}
-
-          Search for \`<<<<<<<\` in the changed files and resolve each conflict.
-
-          @coderabbitai ignore"
-
-          if [ -n "$EXISTING_PR" ]; then
-            echo "Open upstream sync PR already exists: #$EXISTING_PR, updated branch $BRANCH"
-            exit 0
-          fi
-
-          gh pr create \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "Upstream Sync (Conflicts to Resolve)" \
-            --body "$BODY" \
-            --base main \
-            --head "$HEAD_REF"
-        env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_TOKEN }}

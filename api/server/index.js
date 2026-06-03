@@ -223,7 +223,7 @@ const startServer = async () => {
   app.use('/api/mcp', routes.mcp);
   app.use('/api/rum', routes.rum);
 
-  // Initialize forked code routes and extensions
+  // FORK-SENTINEL:init-forked-code — mount forked-code routes/extensions onto the Express app
   initForkedCode(app);
   app.use('/metrics', metricsRouter);
 

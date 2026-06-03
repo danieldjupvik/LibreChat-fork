@@ -973,6 +973,7 @@ class AgentClient extends BaseClient {
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
+        // FORK-SENTINEL:litellm-streamusage — opt LiteLLM agents into streamUsage so createRun keeps streamed usage
         applyLiteLLMStreamUsage(agents);
 
         // TODO: needs to be added as part of AgentContext initialization

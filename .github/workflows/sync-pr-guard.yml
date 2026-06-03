@@ -1,0 +1,105 @@
+name: Fork Integrity Guard
+
+# Runs on every PR into main. Two fast, fork-specific gates that the rest of CI
+# does not cover:
+#   1. no committed conflict markers reach main
+#   2. no registered fork edit (FORK:<id> sentinel) is dropped by a change
+# Build / typecheck / lint are covered by the existing PR workflows.
+# Mark this job a required status check in branch protection for `main`.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  guard:
+    name: Fork integrity
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: No conflict markers in tracked files
+        run: |
+          set -euo pipefail
+          # Scan ALL tracked files (`git grep -I` skips binaries). The sync job can
+          # commit a conflict in ANY tracked file — root configs, workflows, docs,
+          # package files — so the scan must not be scoped to source dirs.
+          # `<<<<<<<` and `>>>>>>>` at line start unambiguously bracket a conflict;
+          # if neither is present there is no conflict.
+          if git grep -I -nE '^(<{7}|>{7})' -- .; then
+            echo "::error::Unresolved conflict markers found — resolve before merge."
+            exit 1
+          fi
+          echo "No conflict markers."
+
+      - name: No unresolved marker-less conflicts
+        run: |
+          # Binary / modify-delete conflicts have no `<<<<<<<` text for the scan
+          # above to catch. The sync job records them here; block until resolved.
+          # Test EXISTENCE (-e), not size (-s): resolution is DELETING the file, so a
+          # truncated/empty artifact must still block — `-s` would let it through.
+          if [ -e .fork/UNRESOLVED-CONFLICTS.txt ]; then
+            echo "::error::Unresolved marker-less conflicts remain — reconcile them and delete .fork/UNRESOLVED-CONFLICTS.txt"
+            cat .fork/UNRESOLVED-CONFLICTS.txt
+            exit 1
+          fi
+          echo "No marker-less conflict artifact."
+
+      - name: Fork sentinels intact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          # Run the verifier LOGIC from the base branch, not from the PR. If we ran
+          # the PR's copy, a PR could edit verify-sentinels.sh to `exit 0` while
+          # dropping a sentinel and still satisfy this required check. Only the
+          # script is pinned to base; it scans the PR's working tree. Improvements
+          # to the verifier take effect on the next PR after they land on base.
+          verifier="$RUNNER_TEMP/verify-sentinels-base.sh"
+          if git cat-file -e "$BASE_SHA:.fork/verify-sentinels.sh" 2>/dev/null; then
+            git show "$BASE_SHA:.fork/verify-sentinels.sh" > "$verifier"
+          else
+            echo "::warning::base has no .fork/verify-sentinels.sh yet; using the PR copy (bootstrap PR introducing the guard)."
+            cp .fork/verify-sentinels.sh "$verifier"
+          fi
+
+          # (A) BASE rows must stay intact in the PR's working tree. Verifying the
+          # PR's own registry (step B) is not enough: a PR can drop a fork edit AND
+          # repurpose its registry row — same id, new file/anchor — so pass 1 of a
+          # PR-registry run finds the (now different) behavior and passes. Running
+          # the verifier with the BASE registry over the PR tree forces every
+          # base-registered (id, file, anchor) to still resolve to a present, unique
+          # marker. SKIP_ORPHAN_SCAN keeps the PR's NEW markers from tripping pass 2.
+          # Base rows are locked within a PR — relocating/removing a fork edit is
+          # done on main directly. Skipped on the bootstrap PR (base has no registry).
+          if git cat-file -e "$BASE_SHA:.fork/sentinels.tsv" 2>/dev/null; then
+            base_registry="$RUNNER_TEMP/sentinels-base.tsv"
+            git show "$BASE_SHA:.fork/sentinels.tsv" > "$base_registry"
+            if grep -q 'SKIP_ORPHAN_SCAN' "$verifier"; then
+              SKIP_ORPHAN_SCAN=1 bash "$verifier" "$base_registry"
+            else
+              # Pinned base verifier predates rows-only mode. For this one PR, fall
+              # back to the id-only no-shrink check (cannot catch same-id repurposing);
+              # once this change lands on base the branch above takes over next PR.
+              echo "::warning::base verifier lacks SKIP_ORPHAN_SCAN; using id-only no-shrink fallback this PR."
+              ids() { grep -vE '^[[:space:]]*(#|$)' "$1" | cut -f1 | sort -u; }
+              dropped=$(comm -23 <(ids "$base_registry") <(ids .fork/sentinels.tsv) || true)
+              if [[ -n "$dropped" ]]; then
+                echo "::error::PR drops fork-edit registry rows present on base — remove fork edits on main, not via a PR:"
+                printf '  %s\n' $dropped
+                exit 1
+              fi
+            fi
+            echo "No base-registered fork edits dropped relative to base."
+          fi
+
+          # (B) Validate the PR's OWN registry end-to-end against the PR tree: every
+          # row resolves to a present, unique marker + anchor, and no unregistered
+          # (orphan) marker exists anywhere in the tree (this covers new additions).
+          bash "$verifier"

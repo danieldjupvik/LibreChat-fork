@@ -260,7 +260,7 @@ const HoverButtons = ({
         />
       )}
 
-      {/* Response Cost */}
+      {/* FORK-SENTINEL:response-cost — fork-only per-message cost display */}
       <ResponseCost message={message} conversation={conversation} isLast={isLast} />
 
       {/* Continue Button */}

@@ -26,6 +26,7 @@ import { RouteGuard } from '~/forked-code-custom';
 const AuthLayout = () => (
   <AuthContextProvider>
     <WithRum>
+      {/* FORK-SENTINEL:route-guard — fork-only auth/subscription route gating around app routes */}
       <RouteGuard>
         <Outlet />
       </RouteGuard>

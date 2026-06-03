@@ -87,6 +87,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           <GearIcon className="icon-md" aria-hidden="true" />
           {localize('com_nav_settings')}
         </Menu.MenuItem>
+        {/* FORK-SENTINEL:customer-portal-menu — fork-only billing portal entry in the account menu */}
         <CustomerPortalMenuItem email={user?.email} />
         <DropdownMenuSeparator />
         <Menu.MenuItem onClick={() => logout()} className="select-item text-sm">
