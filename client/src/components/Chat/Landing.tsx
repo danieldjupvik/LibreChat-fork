@@ -130,6 +130,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       margin = 'mb-12';
     }
 
+    // FORK-SENTINEL:landing-suggestions-margin — extra bottom margin so PromptSuggestions clears the input
     if (contentHeight > 334) {
       margin = 'mb-28';
       if (window.innerWidth < 640) {
@@ -211,6 +212,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             {description}
           </div>
         )}
+        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
         <PromptSuggestions />
       </div>
     </div>

@@ -52,11 +52,12 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
           {spec.description && (
             <span className="break-words text-xs font-normal">{spec.description}</span>
           )}
+          {/* FORK-SENTINEL:modelspec-badges — fork-only model badges under the spec description */}
           <ModelBadges spec={spec} />
         </div>
       </div>
 
-      {/* Wrapper for capability icons and selected checkmark, aligned to top */}
+      {/* FORK-SENTINEL:modelspec-capabilities — fork-only capability icons aligned to the spec row top */}
       <div
         className="flex flex-shrink-0 gap-2 py-1"
         style={{ alignSelf: 'flex-start', marginRight: isSelected ? '0' : '24px' }}

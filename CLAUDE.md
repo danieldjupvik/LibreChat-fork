@@ -170,3 +170,13 @@ Multi-line imports count total character length across all lines. Consolidate va
 ## Formatting
 
 Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) using auto-fix when available. All TypeScript/ESLint warnings and errors **must** be resolved.
+
+---
+
+<!-- FORK-SENTINEL:claude-fork-pointer — fork guidance entrypoint; see .fork/README.md -->
+
+## Fork Conventions
+
+This repository is a fork with an active upstream. Read **`FORK.md`** before changing code. Most importantly: tag every inline edit to an upstream file with a `FORK-SENTINEL:<id>` comment and register it in `.fork/sentinels.tsv` — CI blocks merges that drop a sentinel or leave a conflict marker.
+
+Run checks the fast way (see `FORK.md` → "Running checks"): **never `npx eslint .`** — the type-aware config makes a full-repo lint take minutes; lint only changed files instead. Type-check needs the workspace packages built first, and a full-client `tsc` is not expected to be clean (pre-existing upstream debt).

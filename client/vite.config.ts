@@ -90,6 +90,7 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
+        // FORK-SENTINEL:brand-manifest — PWA manifest fork branding (name + short_name)
         name: 'Daniel AI',
         short_name: 'Daniel AI',
         display: 'standalone',

@@ -1,0 +1,44 @@
+# Fork sentinel registry — see .fork/README.md
+#
+# Every intentional inline edit to an UPSTREAM file is tagged in code with a
+# unique `// FORK-SENTINEL:<id>` comment and registered here. CI (.github/
+# workflows/sync-pr-guard.yml) and the sync job (.github/workflows/
+# sync-upstream.yml) fail if any registered sentinel disappears from its file —
+# converting the previously-silent loss of a fork change into a loud failure.
+#
+# Format (TAB-separated, no leading spaces):
+#   id <TAB> file <TAB> description <TAB> anchor
+#
+# Rules:
+#   - id: lowercase kebab-case starting with a letter, unique, stable.
+#         Matches the code marker FORK-SENTINEL:<id>.
+#   - file: repo-relative path of the upstream file carrying the edit.
+#   - description: the fork intent — what would break if this edit vanished.
+#   - anchor: a fixed substring of the fork BEHAVIOR that must still exist in
+#         the file (verified with grep -F). The marker is a comment; without an
+#         anchor a merge could delete the behavior, keep the comment, and pass.
+#         Pick the most stable distinctive token of the edit (a call or JSX tag)
+#         and keep it unique within the file. Required. The verifier rejects an
+#         anchor that matches more than one line, so avoid tokens that are a
+#         substring of a sibling line (e.g. `name:` lives inside `short_name:` —
+#         anchor the distinct line instead).
+#
+# Example row (id <TAB> file <TAB> description <TAB> anchor):
+#   my-feature	client/src/components/Chat/Example.tsx	What breaks if this edit vanishes	<ExampleWidget
+litellm-streamusage	api/server/controllers/agents/client.js	Opt LiteLLM agents into streamUsage so upstream createRun keeps streamed token usage	applyLiteLLMStreamUsage(
+sync-response-usage	api/server/controllers/agents/request.js	Set token/cost usage on the response before the final SSE event	await syncResponseUsage(
+sync-response-usage-persist	api/server/controllers/agents/request.js	Background-persist cost metadata without blocking the SSE final event	persist: true
+init-forked-code	api/server/index.js	Mount forked-code routes/extensions onto the Express app	initForkedCode(
+landing-suggestions-margin	client/src/components/Chat/Landing.tsx	Extra bottom margin so PromptSuggestions clears the input	mb-28
+prompt-suggestions	client/src/components/Chat/Landing.tsx	Fork-only starter prompt suggestions on the landing screen	<PromptSuggestions
+modelspec-badges	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only model badges under the spec description	<ModelBadges
+modelspec-capabilities	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only capability icons aligned to the spec row top	<CapabilityIcons
+searchresults-badges	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only model badges in endpoint search results	<ModelBadges
+searchresults-capabilities	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only capability icons in endpoint search results	<CapabilityIcons
+response-cost	client/src/components/Chat/Messages/HoverButtons.tsx	Fork-only per-message cost display	<ResponseCost
+customer-portal-menu	client/src/components/Nav/AccountSettings.tsx	Fork-only billing portal entry in the account menu	<CustomerPortalMenuItem
+forked-customizations	client/src/main.jsx	Mounts fork-only global customizations and custom CSS import	<ForkedCustomizations
+route-guard	client/src/routes/index.tsx	Fork-only auth/subscription route gating around app routes	<RouteGuard
+brand-manifest	client/vite.config.ts	PWA manifest fork branding (name + short_name)	short_name: 'Daniel AI'
+brand-title	client/index.html	Page title and meta description (fork branding)	<title>Daniel AI</title>
+claude-fork-pointer	CLAUDE.md	Fork guidance entrypoint: @FORK.md import + FORK-SENTINEL rule for agents	Read **`FORK.md`**

@@ -15,6 +15,7 @@ const root = createRoot(container);
 
 root.render(
   <ApiErrorBoundaryProvider>
+    {/* FORK-SENTINEL:forked-customizations — mounts fork-only global customizations (and custom CSS import above) */}
     <ForkedCustomizations />
     <App />
   </ApiErrorBoundaryProvider>,

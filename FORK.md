@@ -1,4 +1,4 @@
-# CLAUDE-FORK.md
+# Fork Guide
 
 Fork-specific guidance for AI coding assistants. For general project architecture, code style, and conventions, see [AGENTS.md](./AGENTS.md) (upstream-maintained).
 
@@ -11,6 +11,53 @@ LibreChat fork with active upstream. Minimize merge conflicts:
 - Custom backend routes go under `/api/forked/*`
 - Prefer extension over modification (wrap components, override CSS via higher specificity)
 - Leave inline comments explaining why a change was made
+- **Tag every inline upstream edit** with a `FORK-SENTINEL:<id>` comment and register it in `.fork/sentinels.tsv`. CI blocks merges to `main` that drop a registered sentinel or leave a conflict marker. See `.fork/README.md`.
+
+## Running checks (fast)
+
+**ESLint is the lint gate — but never run `npx eslint .`.** The config is type-aware
+(it builds a TypeScript program per file), so linting the whole repo takes minutes.
+Lint only changed files, exactly like CI (~10s):
+
+```bash
+git diff --name-only --diff-filter=ACMRTUXB HEAD -- '*.js' '*.jsx' '*.ts' '*.tsx' \
+  | grep -E '^(api|client|packages)/' \
+  | xargs -r npx eslint --no-error-on-unmatched-pattern --max-warnings=0
+```
+
+Single file: `npx eslint path/to/file.tsx` (add `--fix` to auto-fix).
+
+Lint the **entire fork codebase** (all fork-owned JS/TS dirs, uses the existing config, ~5s) — a good final check that doesn't depend on what the diff happens to touch:
+
+```bash
+npx eslint --no-error-on-unmatched-pattern --max-warnings=0 \
+  client/src/forked-code-custom api/server/forked-code
+```
+
+**Type-check.** Build the workspace packages first or the client sees stale
+cross-package types (parallel + cached; skips the heavy client app build):
+
+```bash
+npx turbo run build --filter='./packages/*'
+cd client && npx tsc --noEmit
+```
+
+CI type-gates differ by workspace:
+
+- **`packages/*` ARE strictly type-checked** (`backend-review.yml` runs `tsc --noEmit -p`
+  on each). If you change a package, keep it clean:
+  `npx tsc --noEmit -p packages/<name>/tsconfig.json`.
+- **The `client/` app is NOT type-checked in CI** — it ships via Vite/esbuild (no type
+  check) and is covered by ESLint + Jest. So `cd client && npx tsc --noEmit` always
+  reports pre-existing **upstream** type debt (tests, a11y, agents, etc.). That baseline
+  is not yours to fix — only ensure the files **you** changed add no *new* errors.
+
+In practice: ESLint on changed files is the lint gate; package `tsc` is the type gate;
+a green `tsc` over the whole `client/` app is not expected and not required.
+
+**Install:** `npm ci` — authoritative (`packageManager: npm`, CI uses it) and never
+rewrites a lockfile. Avoid `bun install`: upstream's `bun.lock` is stale, so bun
+rewrites it on every run (large spurious diff).
 
 ## Fork File Locations
 
@@ -58,7 +105,7 @@ Frontend → POST /api/agents/chat/LiteLLM
 
 ### Key Gotchas
 
-1. **`streamUsage` is disabled for custom providers** — `packages/api/src/agents/run.ts:276` sets `llmConfig.streamUsage = false` for all custom providers. We patched this to skip the override when `agent.endpoint` contains `'litellm'` (case-insensitive `includes` check). Without this, `usage_metadata` arrives as `undefined` and `response_metadata.usage` is `{}`.
+1. **`streamUsage` is disabled for custom providers** — `packages/api/src/agents/run.ts` sets `llmConfig.streamUsage = false` for custom providers unless `model_parameters.streamUsage` is explicitly set. The fork's `applyLiteLLMStreamUsage` (`api/server/forked-code/agents/applyLiteLLMStreamUsage.js`, called from `client.js` via the `FORK-SENTINEL:litellm-streamusage` edit) sets that opt-in for LiteLLM-endpoint agents so upstream skips the disable path. Without it, `usage_metadata` arrives as `undefined` and `response_metadata.usage` is `{}`. (This replaces the older inline `run.ts` patch.)
 
 2. **`tokenCount` is deleted before reaching frontend** — `BaseClient.js:810` does `delete responseMessage.tokenCount` after saving to DB. `syncResponseUsage` re-attaches it from `client.getStreamUsage()`.
 
@@ -70,10 +117,12 @@ Frontend → POST /api/agents/chat/LiteLLM
 
 6. **TypeScript packages need rebuild** — Changes to `packages/api/src/` require `npm run build:packages` before restart.
 
-### Upstream Files Modified (minimize these)
+### Upstream Files Modified
 
-- `packages/api/src/agents/run.ts:276` — Skip `streamUsage = false` for endpoints containing "litellm"
-- `api/server/controllers/agents/request.js` — Import and call `syncResponseUsage` (non-blocking persist)
+The canonical, CI-enforced list of every inline upstream edit lives in `.fork/sentinels.tsv` (each tagged with a `FORK-SENTINEL:<id>`). Do not keep a duplicate list here. LiteLLM-relevant edits:
+
+- `api/server/controllers/agents/client.js` — calls `applyLiteLLMStreamUsage(agents)` (opts LiteLLM agents into streamed usage).
+- `api/server/controllers/agents/request.js` — calls `syncResponseUsage` (non-persist + fire-and-forget persist).
 
 ### Fork Files for Cost Display
 
