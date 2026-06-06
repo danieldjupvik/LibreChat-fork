@@ -21,6 +21,7 @@ export type TModelSpec = {
   preset: TModelSpecPreset;
   order?: number;
   default?: boolean;
+  softDefault?: boolean;
   description?: string;
   /**
    * Optional group name for organizing specs in the UI selector.
@@ -74,6 +75,7 @@ export const tModelSpecSchema = z.object({
   preset: tModelSpecPresetSchema,
   order: z.number().optional(),
   default: z.boolean().optional(),
+  softDefault: z.boolean().optional(),
   description: z.string().optional(),
   group: z.string().optional(),
   groupIcon: z.union([z.string(), eModelEndpointSchema]).optional(),
