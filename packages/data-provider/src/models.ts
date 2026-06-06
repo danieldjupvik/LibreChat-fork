@@ -55,6 +55,7 @@ export type TModelSpec = {
   executeCode?: boolean;
   artifacts?: string | boolean;
   mcpServers?: string[];
+  skills?: boolean | string[];
 };
 
 // Define badges schema for validation
@@ -90,6 +91,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
+  skills: z.union([z.boolean(), z.array(z.string())]).optional(),
 });
 
 export const specsConfigSchema = z.object({
