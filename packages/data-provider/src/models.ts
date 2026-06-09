@@ -62,7 +62,6 @@ export type TModelSpec = {
   subagents?: AgentSubagentsConfig;
 };
 
-<<<<<<< HEAD
 // Define badges schema for validation
 export const badgesSchema = z.object({
   disabled: z.boolean().optional(),
@@ -71,13 +70,12 @@ export const badgesSchema = z.object({
   showPricing: z.boolean().optional(),
   isFree: z.boolean().optional(),
   maxContextToken: z.number().optional(),
-||||||| 4b699fb60
-=======
+});
+
 export const modelSpecSubagentsSchema = z.object({
   enabled: z.boolean().optional(),
   allowSelf: z.boolean().optional(),
   agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
->>>>>>> upstream/main
 });
 
 export const tModelSpecSchema = z.object({
