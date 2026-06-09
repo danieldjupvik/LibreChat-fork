@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AgentSubagentsConfig } from './types/assistants';
 import type { TModelSpecPreset } from './schemas';
 import {
   EModelEndpoint,
@@ -7,6 +8,7 @@ import {
   AuthType,
   authTypeSchema,
 } from './schemas';
+import { MAX_SUBAGENTS } from './limits';
 
 export type ModelCapabilityType =
   | 'reasoning'
@@ -57,6 +59,7 @@ export type TModelSpec = {
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
+  subagents?: AgentSubagentsConfig;
 };
 
 // Define badges schema for validation
@@ -67,6 +70,12 @@ export const badgesSchema = z.object({
   showPricing: z.boolean().optional(),
   isFree: z.boolean().optional(),
   maxContextToken: z.number().optional(),
+});
+
+export const modelSpecSubagentsSchema = z.object({
+  enabled: z.boolean().optional(),
+  allowSelf: z.boolean().optional(),
+  agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
 });
 
 export const tModelSpecSchema = z.object({
@@ -94,6 +103,7 @@ export const tModelSpecSchema = z.object({
   artifacts: z.union([z.string(), z.boolean()]).optional(),
   mcpServers: z.array(z.string()).optional(),
   skills: z.union([z.boolean(), z.array(z.string())]).optional(),
+  subagents: modelSpecSubagentsSchema.optional(),
 });
 
 export const specsConfigSchema = z.object({
