@@ -15,14 +15,8 @@ const {
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
-<<<<<<< HEAD
-const { saveMessage, getConvo } = require('~/models');
-const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
-||||||| d2319720c
-const { saveMessage, getConvo } = require('~/models');
-=======
 const { saveMessage, getMessages, getConvo } = require('~/models');
->>>>>>> upstream/main
+const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
 
 function createCloseHandler(abortController) {
   return function (manual) {
