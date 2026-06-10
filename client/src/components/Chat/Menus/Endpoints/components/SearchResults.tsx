@@ -5,11 +5,12 @@ import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider'
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
+import { CapabilityIcons, ModelBadges } from '~/forked-code-custom';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import { shouldRenderEndpointOption } from '../utils';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { CapabilityIcons, ModelBadges } from '~/forked-code-custom';
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -116,6 +117,10 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
         } else {
           // For an endpoint item
           const endpoint = item as Endpoint;
+          if (!shouldRenderEndpointOption(endpoint)) {
+            return null;
+          }
+
           if (endpoint.hasModels) {
             const lowerQuery = searchValue.toLowerCase();
             const endpointMatches = endpoint.label.toLowerCase().includes(lowerQuery);
