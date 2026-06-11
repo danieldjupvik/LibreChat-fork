@@ -9,6 +9,7 @@ import { CapabilityIcons, ModelBadges } from '~/forked-code-custom';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import { shouldRenderEndpointOption } from '../utils';
+import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
 
@@ -83,11 +84,19 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                 )}
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="truncate text-left">{spec.label}</span>
+<<<<<<< HEAD
                   {spec.description && (
                     <span className="break-words text-xs font-normal">{spec.description}</span>
                   )}
                   {/* FORK-SENTINEL:searchresults-badges — fork-only model badges in endpoint search results */}
                   <ModelBadges spec={spec} />
+||||||| d91cec210
+                  {spec.description && (
+                    <span className="break-words text-xs font-normal">{spec.description}</span>
+                  )}
+=======
+                  <SpecDescription description={spec.description} />
+>>>>>>> upstream/main
                 </div>
               </div>
               {/* FORK-SENTINEL:searchresults-capabilities — fork-only capability icons in endpoint search results */}
