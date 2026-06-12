@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { defineConfig } from 'vite';
 import { createRequire } from 'module';
@@ -34,6 +35,13 @@ const backendURL = process.env.HOST
   ? `http://${process.env.HOST}:${backendPort}`
   : `http://localhost:${backendPort}`;
 const buildSourceMap = process.env.NODE_ENV === 'development';
+const QUERY_DEVTOOLS_CHUNK_MODULES = [
+  '@tanstack/react-query-devtools',
+  '@tanstack/match-sorter-utils',
+  'node_modules/superjson',
+  'node_modules/copy-anything',
+  'node_modules/is-what',
+];
 
 export default defineConfig(({ command }) => ({
   base: '',
@@ -66,6 +74,17 @@ export default defineConfig(({ command }) => ({
       },
     },
     nodePolyfills(),
+    {
+      name: 'emit-sw-heal',
+      apply: 'build',
+      generateBundle() {
+        this.emitFile({
+          type: 'asset',
+          fileName: 'sw-heal.js',
+          source: fs.readFileSync(path.resolve(__dirname, 'sw/heal.js'), 'utf8'),
+        });
+      },
+    },
     VitePWA({
       injectRegister: 'auto', // 'auto' | 'manual' | 'disabled'
       registerType: 'autoUpdate', // 'prompt' | 'autoUpdate'
@@ -87,12 +106,18 @@ export default defineConfig(({ command }) => ({
           'images/**/*',
           '**/*.map',
           'index.html',
+          'sw-heal.js',
           'assets/rum.*.js',
           'assets/locale-*.js',
+          'assets/query-devtools*.js',
         ],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         /** LibreChat mutates index.html per request for subpath and language support. */
         navigateFallback: null,
+        /** Reloads window clients that cannot answer a ping after activation —
+         * pages stuck on a previous build's purged precache (stale index.html)
+         * have no working code of their own to recover with. */
+        importScripts: ['sw-heal.js'],
         runtimeCaching: [
           {
             urlPattern: ({ url }) => /\/assets\/locale-[^/]+\.js$/.test(url.pathname),
@@ -311,6 +336,13 @@ export default defineConfig(({ command }) => ({
                   }
                   if (normalizedId.includes('node_modules/hast-util-raw')) {
                     return 'markdown_large';
+                  }
+                  if (
+                    QUERY_DEVTOOLS_CHUNK_MODULES.some((moduleName) =>
+                      normalizedId.includes(moduleName),
+                    )
+                  ) {
+                    return 'query-devtools';
                   }
                   if (normalizedId.includes('@tanstack')) {
                     return 'tanstack-vendor';

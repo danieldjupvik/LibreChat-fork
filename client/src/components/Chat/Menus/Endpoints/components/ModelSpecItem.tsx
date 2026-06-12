@@ -3,11 +3,12 @@ import { VisuallyHidden } from '@ariakit/react';
 import { CheckCircle2, Pin, PinOff } from 'lucide-react';
 import type { TModelSpec } from 'librechat-data-provider';
 import { useFavorites, useLocalize, useIsActiveItem } from '~/hooks';
+import { ModelBadges, CapabilityIcons } from '~/forked-code-custom';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
 import { cn } from '~/utils';
-import { ModelBadges, CapabilityIcons } from '~/forked-code-custom';
 
 interface ModelSpecItemProps {
   spec: TModelSpec;
@@ -49,9 +50,7 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         )}
         <div className="flex min-w-0 flex-col gap-1">
           <span className="truncate text-left">{spec.label}</span>
-          {spec.description && (
-            <span className="break-words text-xs font-normal">{spec.description}</span>
-          )}
+          <SpecDescription description={spec.description} />
           {/* FORK-SENTINEL:modelspec-badges — fork-only model badges under the spec description */}
           <ModelBadges spec={spec} />
         </div>
