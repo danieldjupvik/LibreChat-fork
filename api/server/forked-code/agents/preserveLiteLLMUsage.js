@@ -40,11 +40,17 @@ const mergeOpenAICompatibleUsage = (usage, rawUsage) => {
   if (shouldUseRawCount(merged.total_tokens, rawUsage.total_tokens)) {
     merged.total_tokens = rawUsage.total_tokens;
   }
-  if (merged.prompt_tokens_details == null && rawUsage.prompt_tokens_details != null) {
-    merged.prompt_tokens_details = rawUsage.prompt_tokens_details;
+  if (rawUsage.prompt_tokens_details != null) {
+    merged.prompt_tokens_details = {
+      ...rawUsage.prompt_tokens_details,
+      ...(merged.prompt_tokens_details ?? {}),
+    };
   }
-  if (merged.completion_tokens_details == null && rawUsage.completion_tokens_details != null) {
-    merged.completion_tokens_details = rawUsage.completion_tokens_details;
+  if (rawUsage.completion_tokens_details != null) {
+    merged.completion_tokens_details = {
+      ...rawUsage.completion_tokens_details,
+      ...(merged.completion_tokens_details ?? {}),
+    };
   }
 
   const cacheRead = getRawCacheReadTokens(rawUsage);

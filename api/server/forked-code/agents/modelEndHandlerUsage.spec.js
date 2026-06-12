@@ -244,6 +244,40 @@ describe('ModelEndHandler LiteLLM usage preservation', () => {
     );
   });
 
+  it('deep-merges raw token detail buckets into existing usage_metadata details', async () => {
+    const collectedUsage = [];
+    const handler = new ModelEndHandler(collectedUsage, null);
+    preserveForLiteLLM(handler);
+
+    await handler.handle(
+      'on_chat_model_end',
+      {
+        output: {
+          usage_metadata: {
+            input_tokens: 168,
+            output_tokens: 96,
+            completion_tokens_details: { accepted_prediction_tokens: 5 },
+          },
+          response_metadata: {
+            usage: {
+              prompt_tokens: 168,
+              completion_tokens: 96,
+              total_tokens: 264,
+              completion_tokens_details: { reasoning_tokens: 69 },
+            },
+          },
+        },
+      },
+      { ls_model_name: 'gpt-5.5', user_id: 'u' },
+      buildGraph(),
+    );
+
+    expect(collectedUsage[0].completion_tokens_details).toEqual({
+      accepted_prediction_tokens: 5,
+      reasoning_tokens: 69,
+    });
+  });
+
   it('preserves LiteLLM usage when the runtime AgentContext has no endpoint fields', async () => {
     const collectedUsage = [];
     const handler = new ModelEndHandler(collectedUsage, null);
