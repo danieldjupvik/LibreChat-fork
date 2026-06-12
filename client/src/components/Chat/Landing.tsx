@@ -13,8 +13,8 @@ import {
 import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/Providers';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-import { useLocalize, useAuthContext } from '~/hooks';
 import { PromptSuggestions } from '~/forked-code-custom';
+import { useLocalize, useAuthContext } from '~/hooks';
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
