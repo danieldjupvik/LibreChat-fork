@@ -50,19 +50,9 @@ export function ModelSpecItem({ spec, isSelected }: ModelSpecItemProps) {
         )}
         <div className="flex min-w-0 flex-col gap-1">
           <span className="truncate text-left">{spec.label}</span>
-<<<<<<< HEAD
-          {spec.description && (
-            <span className="break-words text-xs font-normal">{spec.description}</span>
-          )}
+          <SpecDescription description={spec.description} />
           {/* FORK-SENTINEL:modelspec-badges — fork-only model badges under the spec description */}
           <ModelBadges spec={spec} />
-||||||| d91cec210
-          {spec.description && (
-            <span className="break-words text-xs font-normal">{spec.description}</span>
-          )}
-=======
-          <SpecDescription description={spec.description} />
->>>>>>> upstream/main
         </div>
       </div>
 

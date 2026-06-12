@@ -14,13 +14,7 @@ import { useChatContext, useAgentsMapContext, useAssistantsMapContext } from '~/
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 import { useLocalize, useAuthContext } from '~/hooks';
-<<<<<<< HEAD
-import { getIconEndpoint, getEntity } from '~/utils';
 import { PromptSuggestions } from '~/forked-code-custom';
-||||||| d91cec210
-import { getIconEndpoint, getEntity } from '~/utils';
-=======
->>>>>>> upstream/main
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-white dark:bg-presentation dark:text-white text-black dark:after:shadow-none ';
@@ -238,21 +232,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
-<<<<<<< HEAD
-        {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
-            {description}
-          </div>
-        )}
-        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
-        <PromptSuggestions />
-||||||| d91cec210
-        {description && (
-          <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
-            {description}
-          </div>
-        )}
-=======
         {description &&
           (descriptionIsHTML ? (
             <div
@@ -264,7 +243,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               {description}
             </div>
           ))}
->>>>>>> upstream/main
+        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
+        <PromptSuggestions />
       </div>
     </div>
   );
