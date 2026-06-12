@@ -2,7 +2,7 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: '0 */1 * * *' # hourly
+    - cron: '0 6 * * *' # daily
   workflow_dispatch:
 
 concurrency:
