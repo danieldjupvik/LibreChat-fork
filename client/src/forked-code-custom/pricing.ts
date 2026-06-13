@@ -81,11 +81,11 @@ export const buildBreakdownFromRates = ({
   const cacheCreationRate = toNonNegativeNumber(rates.cache_creation_input_token_cost ?? inputRate);
   const cacheReadRate = toNonNegativeNumber(rates.cache_read_input_token_cost ?? inputRate);
   const outputRate = toNonNegativeNumber(rates.output_cost_per_token);
-  const reasoningRate = toNonNegativeNumber(rates.output_cost_per_reasoning_token || outputRate);
+  const reasoningRate = toNonNegativeNumber(rates.output_cost_per_reasoning_token ?? outputRate);
 
-  const effectiveInputTokens = Math.max(0, inputTokens - cacheCreationTokens - cacheReadTokens);
+  const nonCachedInputTokens = Math.max(0, inputTokens - cacheCreationTokens - cacheReadTokens);
   const inputCost =
-    effectiveInputTokens * inputRate +
+    nonCachedInputTokens * inputRate +
     cacheCreationTokens * cacheCreationRate +
     cacheReadTokens * cacheReadRate;
   const outputCost = effectiveOutputTokens * outputRate;
