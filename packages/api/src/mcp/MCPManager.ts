@@ -12,6 +12,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  isOAuthServer,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
@@ -349,6 +350,7 @@ Please follow these instructions when using tools from the respective MCP server
     options,
     tokenMethods,
     requestBody,
+    requestScopedConnections,
     flowManager,
     oauthStart,
     oauthEnd,
@@ -366,6 +368,7 @@ Please follow these instructions when using tools from the respective MCP server
     toolArguments?: Record<string, unknown>;
     options?: RequestOptions;
     requestBody?: RequestBody;
+    requestScopedConnections?: t.RequestScopedMCPConnectionStore;
     tokenMethods?: TokenMethods;
     customUserVars?: Record<string, string>;
     flowManager: FlowStateManager<MCPOAuthTokens | null>;
@@ -377,6 +380,7 @@ Please follow these instructions when using tools from the respective MCP server
   }): Promise<t.FormattedToolResponse> {
     /** User-specific connection */
     let connection: MCPConnection | undefined;
+    let cleanupRequestOAuthHandler: (() => void) | undefined;
     let disconnectAfterCall = false;
     const userId = user?.id;
     const logPrefix = userId ? `[MCP][User: ${userId}][${serverName}]` : `[MCP][${serverName}]`;
@@ -397,6 +401,7 @@ Please follow these instructions when using tools from the respective MCP server
         signal: options?.signal,
         customUserVars,
         requestBody,
+        requestScopedConnections,
         serverConfig: providedConfig,
       });
 
@@ -408,9 +413,8 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
 
-      const rawConfig =
-        providedConfig ??
-        (await MCPServersRegistry.getInstance().getServerConfig(serverName, userId));
+      const registry = MCPServersRegistry.getInstance();
+      const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
       if (!rawConfig) {
         throw new McpError(
           ErrorCode.InvalidRequest,
@@ -418,7 +422,8 @@ Please follow these instructions when using tools from the respective MCP server
         );
       }
       const isDbSourced = isUserSourced(rawConfig);
-      disconnectAfterCall = !!userId && requiresEphemeralUserConnection(rawConfig);
+      disconnectAfterCall =
+        !!userId && requiresEphemeralUserConnection(rawConfig) && !requestScopedConnections;
 
       /** Pre-process Graph token placeholders (async) before the synchronous processMCPEnv pass */
       const graphProcessedConfig = isDbSourced
@@ -479,6 +484,31 @@ Please follow these instructions when using tools from the respective MCP server
         }
         resolvedHeaders['Authorization'] = `Bearer ${oboTokens.access_token}`;
       }
+      if (userId && user && oauthStart && flowManager && isOAuthServer(currentOptions)) {
+        cleanupRequestOAuthHandler = MCPConnectionFactory.attachRequestOAuthHandler(
+          {
+            serverName,
+            serverConfig: currentOptions,
+            dbSourced: isDbSourced,
+            skipEnvProcessing: true,
+            useSSRFProtection: registry.shouldEnableSSRFProtection(),
+            allowedDomains: registry.getAllowedDomains(),
+            allowedAddresses: registry.getAllowedAddresses(),
+          },
+          {
+            useOAuth: true,
+            user,
+            flowManager,
+            tokenMethods,
+            signal: options?.signal,
+            oauthStart,
+            oauthEnd,
+            customUserVars,
+            requestBody,
+          },
+          connection,
+        );
+      }
 
       connection.setRequestHeaders(resolvedHeaders);
 
@@ -508,6 +538,7 @@ Please follow these instructions when using tools from the respective MCP server
       // Rethrowing allows the caller (createMCPTool) to handle the final user message
       throw error;
     } finally {
+      cleanupRequestOAuthHandler?.();
       // Ephemeral connections are never stored in userConnections, so disconnecting
       // is the only cleanup needed; removing the map entry here could orphan a
       // still-connected cached connection from before a config change.

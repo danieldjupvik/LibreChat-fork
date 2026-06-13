@@ -563,6 +563,66 @@ describe('MCPManager', () => {
       );
     });
 
+    it('should attach request OAuth handler without reprocessing resolved config', async () => {
+      const rawServerConfig = {
+        type: 'sse',
+        url: 'https://api.example.com/{{LIBRECHAT_USER_ID}}',
+        headers: {
+          Authorization: 'Bearer {{USER_TOKEN}}',
+        },
+        requiresOAuth: true,
+        oauth: {
+          authorization_url: 'https://auth.example.com/authorize',
+        },
+      } as t.ParsedServerConfig;
+      const processedServerConfig = {
+        ...rawServerConfig,
+        url: 'https://api.example.com/user-123',
+        headers: {
+          Authorization: 'Bearer ${SHOULD_NOT_EXPAND}',
+        },
+      };
+      const cleanupOAuthHandler = jest.fn();
+
+      mockProcessMCPEnv.mockReturnValue(processedServerConfig);
+      (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mockReturnValue(
+        cleanupOAuthHandler,
+      );
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(rawServerConfig);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const oauthStart = jest.fn();
+
+      await manager.callTool({
+        user: mockUser as IUser,
+        serverName,
+        toolName: 'test_tool',
+        provider: 'openai',
+        oauthStart,
+        flowManager: mockFlowManager as unknown as Parameters<
+          typeof manager.callTool
+        >[0]['flowManager'],
+      });
+
+      /** One pass from user-connection runtime resolution, one from callTool — none from the handler attach */
+      expect(mockProcessMCPEnv).toHaveBeenCalledTimes(2);
+      expect(MCPConnectionFactory.attachRequestOAuthHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverConfig: processedServerConfig,
+          skipEnvProcessing: true,
+        }),
+        expect.objectContaining({
+          oauthStart,
+          user: mockUser,
+        }),
+        mockConnection,
+      );
+      expect(cleanupOAuthHandler).toHaveBeenCalled();
+    });
+
     it('should leave graph token placeholders sandboxed for user-sourced configs', async () => {
       const serverConfig: t.ParsedServerConfig = {
         type: 'sse',
@@ -1753,6 +1813,55 @@ describe('MCPManager', () => {
       expect(first).toBe(firstConnection);
       expect(second).toBe(secondConnection);
       expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('should reuse BODY-scoped connections within a request-scoped connection store', async () => {
+      const bodyUrlConfig: t.ParsedServerConfig = {
+        type: 'streamable-http',
+        url: 'https://api.example.com/messages/{{LIBRECHAT_BODY_MESSAGEID}}/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+      };
+      const requestScopedConnection = {
+        isConnected: jest.fn().mockResolvedValue(true),
+      } as unknown as MCPConnection;
+      const requestScopedConnections: t.RequestScopedMCPConnectionStore = {
+        connections: new Map(),
+        pending: new Map(),
+      };
+
+      mockAppConnections({
+        has: jest.fn().mockResolvedValue(false),
+      });
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(bodyUrlConfig);
+      mockProcessMCPEnv.mockImplementation(({ options, body }) => ({
+        ...options,
+        ...('url' in options && {
+          url: options.url?.replace('{{LIBRECHAT_BODY_MESSAGEID}}', body?.messageId ?? ''),
+        }),
+      }));
+      (MCPConnectionFactory.create as jest.Mock).mockResolvedValue(requestScopedConnection);
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const first = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-1' },
+        requestScopedConnections,
+      });
+      const second = await manager.getUserConnection({
+        serverName,
+        user: mockUser,
+        requestBody: { messageId: 'message-1' },
+        requestScopedConnections,
+      });
+
+      expect(first).toBe(requestScopedConnection);
+      expect(second).toBe(requestScopedConnection);
+      expect(MCPConnectionFactory.create).toHaveBeenCalledTimes(1);
+      expect(requestScopedConnections.connections.get(`${mockUser.id}:${serverName}`)).toBe(
+        requestScopedConnection,
+      );
     });
 
     it('should not clear server cooldowns for ephemeral runtime connections', async () => {
