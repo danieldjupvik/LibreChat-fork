@@ -47,7 +47,7 @@ instead of the change vanishing silently.
 
 ### The sync job (`.github/workflows/sync-upstream.yml`)
 
-Runs hourly:
+Runs daily:
 
 - **Open conflict PR exists?** → pause. Never touch a branch someone is
   resolving.

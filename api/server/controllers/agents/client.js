@@ -70,6 +70,7 @@ const { getMCPServerTools } = require('~/server/services/Config');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const { applyLiteLLMStreamUsage } = require('~/server/forked-code/agents/applyLiteLLMStreamUsage');
+const { preserveLiteLLMUsage } = require('~/server/forked-code/agents/preserveLiteLLMUsage');
 const db = require('~/models');
 
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
@@ -1080,6 +1081,8 @@ class AgentClient extends BaseClient {
         }
         // FORK-SENTINEL:litellm-streamusage — opt LiteLLM agents into streamUsage so createRun keeps streamed usage
         applyLiteLLMStreamUsage(agents);
+        // FORK-SENTINEL:litellm-response-usage — preserve LiteLLM raw OpenAI usage details for cost snapshots
+        preserveLiteLLMUsage(this.options.eventHandlers, { endpoint: this.options.endpoint });
 
         // TODO: needs to be added as part of AgentContext initialization
         // const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];

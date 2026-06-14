@@ -26,6 +26,7 @@
 # Example row (id <TAB> file <TAB> description <TAB> anchor):
 #   my-feature	client/src/components/Chat/Example.tsx	What breaks if this edit vanishes	<ExampleWidget
 litellm-streamusage	api/server/controllers/agents/client.js	Opt LiteLLM agents into streamUsage so upstream createRun keeps streamed token usage	applyLiteLLMStreamUsage(
+litellm-response-usage	api/server/controllers/agents/client.js	Preserve LiteLLM raw OpenAI usage details for token and cost snapshots	preserveLiteLLMUsage(
 sync-response-usage	api/server/controllers/agents/request.js	Set token/cost usage on the response before the final SSE event	await syncResponseUsage(
 sync-response-usage-persist	api/server/controllers/agents/request.js	Background-persist cost metadata without blocking the SSE final event	persist: true
 init-forked-code	api/server/index.js	Mount forked-code routes/extensions onto the Express app	initForkedCode(

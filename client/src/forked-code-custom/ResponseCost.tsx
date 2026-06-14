@@ -1,5 +1,6 @@
 import { memo, useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import type { TMessage, TConversation } from 'librechat-data-provider';
+import copy from 'copy-to-clipboard';
+import { DollarSign } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,37 +13,18 @@ import {
   CheckMark,
   TooltipAnchor,
 } from '@librechat/client';
-import { DollarSign } from 'lucide-react';
-import copy from 'copy-to-clipboard';
-import { fetchUsdToNokRate } from './currencyAdapter';
+import type { TMessage, TConversation } from 'librechat-data-provider';
+import type { LiteLLMUsageSnapshot, CostBreakdown } from './pricing';
+import {
+  toPositiveNumber,
+  toNonNegativeNumber,
+  buildBreakdownFromModelInfo,
+  buildBreakdownFromSnapshot,
+} from './pricing';
 import { fetchLiteLLMModelInfo, fetchCostMargin } from './litellmInfoAdapter';
+import { fetchUsdToNokRate } from './currencyAdapter';
 import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '../utils';
-
-type LiteLLMRates = {
-  input_cost_per_token?: number | null;
-  output_cost_per_token?: number | null;
-  output_cost_per_reasoning_token?: number | null;
-};
-
-type LiteLLMCosts = {
-  input?: number;
-  output?: number;
-  reasoning?: number;
-  total?: number;
-};
-
-type LiteLLMUsageSnapshot = {
-  version?: number;
-  model?: string;
-  input_tokens?: number;
-  output_tokens?: number;
-  reasoning_tokens?: number;
-  rates?: LiteLLMRates;
-  costs?: LiteLLMCosts;
-  currency?: string;
-  calculated_at?: string;
-};
 
 interface MessageWithTokens extends TMessage {
   tokenCount?: number;
@@ -52,23 +34,6 @@ interface MessageWithTokens extends TMessage {
     forked_litellm_usage?: LiteLLMUsageSnapshot;
   };
 }
-
-type CostBreakdown = {
-  model?: string;
-  currency: string;
-  lockedRates: boolean;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number | null;
-  effectiveInputTokens: number;
-  effectiveOutputTokens: number;
-  inputCost: number;
-  outputCost: number;
-  reasoningCost: number;
-  totalCost: number;
-  inputRatePerMillion: number;
-  outputRatePerMillion: number;
-};
 
 type ResponseCostProps = {
   message: TMessage;
@@ -103,16 +68,6 @@ const UI_TEXT = {
   claudeComparisonMiddle: 'would cost',
   claudeComparisonSuffix: 'x more',
   costSection: 'Cost details',
-};
-
-const toPositiveNumber = (value: unknown): number => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-};
-
-const toNonNegativeNumber = (value: unknown): number => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
 };
 
 const formatCompactCost = (value: number) => {
@@ -223,107 +178,6 @@ const findClaudeRates = (
   };
 };
 
-const buildBreakdownFromRates = ({
-  model,
-  inputTokens,
-  outputTokens,
-  reasoningTokens,
-  rates,
-  lockedRates,
-}: {
-  model?: string;
-  inputTokens: number;
-  outputTokens: number;
-  reasoningTokens: number | null;
-  rates: LiteLLMRates;
-  lockedRates: boolean;
-}): CostBreakdown => {
-  const cappedReasoningTokens =
-    reasoningTokens != null ? Math.min(outputTokens, reasoningTokens) : null;
-  const effectiveOutputTokens = Math.max(0, outputTokens - (cappedReasoningTokens ?? 0));
-
-  const inputRate = toNonNegativeNumber(rates.input_cost_per_token);
-  const outputRate = toNonNegativeNumber(rates.output_cost_per_token);
-  const reasoningRate = toNonNegativeNumber(rates.output_cost_per_reasoning_token || outputRate);
-
-  const inputCost = inputTokens * inputRate;
-  const outputCost = effectiveOutputTokens * outputRate;
-  const reasoningCost = (cappedReasoningTokens ?? 0) * reasoningRate;
-  const totalCost = inputCost + outputCost + reasoningCost;
-
-  return {
-    model,
-    currency: 'USD',
-    lockedRates,
-    inputTokens,
-    outputTokens,
-    reasoningTokens: cappedReasoningTokens,
-    effectiveInputTokens: inputTokens,
-    effectiveOutputTokens,
-    inputCost,
-    outputCost,
-    reasoningCost,
-    totalCost,
-    inputRatePerMillion: inputRate * 1_000_000,
-    outputRatePerMillion: outputRate * 1_000_000,
-  };
-};
-
-const buildBreakdownFromSnapshot = ({
-  model,
-  usage,
-}: {
-  model?: string;
-  usage: LiteLLMUsageSnapshot;
-}): CostBreakdown | null => {
-  const inputTokens = toPositiveNumber(usage.input_tokens);
-  const outputTokens = toPositiveNumber(usage.output_tokens);
-  const reasoningTokens =
-    usage.reasoning_tokens != null ? toNonNegativeNumber(usage.reasoning_tokens) : null;
-
-  const rates = usage.rates ?? null;
-  if (rates) {
-    return buildBreakdownFromRates({
-      model: usage.model || model,
-      inputTokens,
-      outputTokens,
-      reasoningTokens,
-      rates,
-      lockedRates: true,
-    });
-  }
-
-  const costs = usage.costs ?? null;
-  if (!costs || typeof costs.total !== 'number') {
-    return null;
-  }
-
-  const cappedReasoningTokens =
-    reasoningTokens != null ? Math.min(outputTokens, reasoningTokens) : null;
-  const effectiveOutputTokens = Math.max(0, outputTokens - (cappedReasoningTokens ?? 0));
-
-  const inputCostVal = toNonNegativeNumber(costs.input);
-  const outputCostVal = toNonNegativeNumber(costs.output);
-
-  return {
-    model: usage.model || model,
-    currency: usage.currency || 'USD',
-    lockedRates: true,
-    inputTokens,
-    outputTokens,
-    reasoningTokens: cappedReasoningTokens,
-    effectiveInputTokens: inputTokens,
-    effectiveOutputTokens,
-    inputCost: inputCostVal,
-    outputCost: outputCostVal,
-    reasoningCost: toNonNegativeNumber(costs.reasoning),
-    totalCost: toNonNegativeNumber(costs.total),
-    inputRatePerMillion: inputTokens > 0 ? (inputCostVal / inputTokens) * 1_000_000 : 0,
-    outputRatePerMillion:
-      effectiveOutputTokens > 0 ? (outputCostVal / effectiveOutputTokens) * 1_000_000 : 0,
-  };
-};
-
 const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [breakdown, setBreakdown] = useState<CostBreakdown | null>(null);
   const [claudeRates, setClaudeRates] = useState<ComparisonRates>(null);
@@ -402,6 +256,8 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     return {
       promptTokens: metadataPromptTokens || promptTokens,
       completionTokens: metadataCompletionTokens || completionTokens,
+      cacheCreationTokens: toPositiveNumber(metadataUsage?.cache_creation_input_tokens),
+      cacheReadTokens: toPositiveNumber(metadataUsage?.cache_read_input_tokens),
       reasoningTokens,
       snapshot: metadataUsage,
     };
@@ -545,18 +401,14 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
           return;
         }
 
-        const fallbackBreakdown = buildBreakdownFromRates({
+        const fallbackBreakdown = buildBreakdownFromModelInfo({
           model: messageModel,
           inputTokens: usage.promptTokens,
           outputTokens: usage.completionTokens,
+          cacheCreationTokens: usage.cacheCreationTokens,
+          cacheReadTokens: usage.cacheReadTokens,
           reasoningTokens: usage.reasoningTokens,
-          rates: {
-            input_cost_per_token: modelInfo.input_cost_per_token ?? 0,
-            output_cost_per_token: modelInfo.output_cost_per_token ?? 0,
-            output_cost_per_reasoning_token:
-              (modelInfo as { output_cost_per_reasoning_token?: number })
-                .output_cost_per_reasoning_token ?? modelInfo.output_cost_per_token,
-          },
+          modelInfo,
           lockedRates: false,
         });
 
