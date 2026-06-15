@@ -21,7 +21,7 @@ import {
   buildBreakdownFromModelInfo,
   buildBreakdownFromSnapshot,
 } from './pricing';
-import { fetchLiteLLMModelInfo, fetchCostMargin } from './litellmInfoAdapter';
+import { fetchLiteLLMModelInfo } from './litellmInfoAdapter';
 import { fetchUsdToNokRate } from './currencyAdapter';
 import { useGetStartupConfig } from '~/data-provider';
 import { cn } from '../utils';
@@ -186,7 +186,6 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
   const [displayCurrencyPreference, setDisplayCurrencyPreference] =
     useState<SupportedCurrency>('USD');
   const [usdToNokRate, setUsdToNokRate] = useState<number | null>(null);
-  const [costMargin, setCostMargin] = useState(0);
   const calculationComplete = useRef(false);
   const { data: startupConfig } = useGetStartupConfig();
   const queryClient = useQueryClient();
@@ -224,15 +223,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       }
     };
 
-    const getMargin = async () => {
-      const margin = await fetchCostMargin();
-      if (isMounted) {
-        setCostMargin(margin);
-      }
-    };
-
     getCurrencyRate();
-    getMargin();
 
     return () => {
       isMounted = false;
@@ -514,14 +505,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     [baseCurrency, displayCurrency, usdToNokRate],
   );
 
-  const marginMultiplier = 1 + costMargin;
-
   const displayedTotalCost = useMemo(() => {
     if (!breakdown) {
       return 0;
     }
-    return convertForDisplay(breakdown.totalCost * marginMultiplier, baseCurrency);
-  }, [breakdown, baseCurrency, convertForDisplay, marginMultiplier]);
+    return convertForDisplay(breakdown.totalCost, baseCurrency);
+  }, [breakdown, baseCurrency, convertForDisplay]);
 
   const handleCurrencyPreferenceChange = useCallback((value: string) => {
     setDisplayCurrencyPreference(value === 'NOK' ? 'NOK' : 'USD');
@@ -541,12 +530,12 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
       return null;
     }
     return convertCurrency({
-      amount: breakdown.totalCost * marginMultiplier,
+      amount: breakdown.totalCost,
       from: baseCurrency,
       to: 'USD',
       usdToNokRate,
     });
-  }, [breakdown, baseCurrency, usdToNokRate, marginMultiplier]);
+  }, [breakdown, baseCurrency, usdToNokRate]);
 
   const claudeCost = useMemo(() => {
     if (!breakdown || !claudeRates || breakdownTotalInUsd == null) return null;
@@ -579,10 +568,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
     return null;
   }
 
-  const compactCostDisplay = formatCurrencyValue(
-    breakdown.totalCost * marginMultiplier,
-    baseCurrency,
-  );
+  const compactCostDisplay = formatCurrencyValue(breakdown.totalCost, baseCurrency);
   const unitLabel = displayCurrency === 'USD' ? '$1' : '1 NOK';
   const showingFallbackCurrency =
     displayCurrencyPreference === 'NOK' &&
@@ -716,7 +702,7 @@ const ResponseCost = ({ message, conversation, isLast }: ResponseCostProps) => {
                 </div>
                 <span className="font-mono text-sm">
                   {formatCurrencyValue(
-                    convertForDisplay(row.cost * marginMultiplier, baseCurrency),
+                    convertForDisplay(row.cost, baseCurrency),
                     displayCurrency,
                     true,
                   )}
