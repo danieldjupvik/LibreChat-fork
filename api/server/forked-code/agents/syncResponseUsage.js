@@ -346,7 +346,11 @@ async function syncResponseUsage({ client, response, req, persist = false }) {
 
   try {
     await saveMessage(
-      req,
+      {
+        userId: req.user?.id,
+        isTemporary: req.body?.isTemporary,
+        interfaceConfig: req.config?.interfaceConfig,
+      },
       {
         messageId: response.messageId,
         conversationId: response.conversationId,

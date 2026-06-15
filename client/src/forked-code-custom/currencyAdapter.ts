@@ -5,7 +5,7 @@ let usdToNokRatePromise: Promise<number | null> | null = null;
 
 const CACHE_DURATION_MS = 60 * 60 * 1000;
 const FAILURE_BACKOFF_MS = 60_000;
-const USD_TO_NOK_ENDPOINT = 'https://api.frankfurter.app/latest?from=USD&to=NOK';
+const USD_TO_NOK_ENDPOINT = 'https://api.frankfurter.dev/v1/latest?from=USD&to=NOK';
 
 export const fetchUsdToNokRate = async (): Promise<number | null> => {
   const now = Date.now();
