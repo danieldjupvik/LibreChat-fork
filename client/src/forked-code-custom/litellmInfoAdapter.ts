@@ -44,6 +44,7 @@ export interface LiteLLMModelInfo {
   input_cost_per_token_batches?: number | null;
   output_cost_per_token_batches?: number | null;
   output_cost_per_token?: number;
+  output_cost_per_reasoning_token?: number | null;
   output_cost_per_audio_token?: number | null;
   output_cost_per_character?: number | null;
   output_cost_per_token_above_128k_tokens?: number | null;
@@ -93,10 +94,6 @@ export interface ModelPricingInfo {
 let modelInfoCache: Record<string, LiteLLMModelInfo> | null = null;
 let lastFetchTime = 0;
 const CACHE_DURATION = 60 * 60 * 1000; // Cache for 1 hour
-
-let marginCache: number | null = null;
-let marginFetchTime = 0;
-let marginInflight: Promise<number> | null = null;
 
 // Singleton promise for initialization
 let globalLiteLLMDataPromise: Promise<Record<string, LiteLLMModelInfo>> | null = null;
@@ -151,43 +148,6 @@ export const fetchLiteLLMModelInfo = async (): Promise<Record<string, LiteLLMMod
     // Return empty object if fetch fails
     return {};
   }
-};
-
-/**
- * Fetch the global cost margin from LiteLLM (cached for 1 hour)
- */
-export const fetchCostMargin = async (): Promise<number> => {
-  const now = Date.now();
-
-  if (marginCache != null && now - marginFetchTime < CACHE_DURATION) {
-    return marginCache;
-  }
-
-  if (marginInflight) {
-    return marginInflight;
-  }
-
-  const authHeader = axios.defaults.headers.common['Authorization'] as string | undefined;
-  marginInflight = fetch('/api/forked/litellm/cost-margin', {
-    headers: authHeader ? { Authorization: authHeader } : {},
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        return 0;
-      }
-      const data = (await res.json()) as { margin?: number };
-      const margin =
-        typeof data.margin === 'number' && Number.isFinite(data.margin) ? data.margin : 0;
-      marginCache = margin;
-      marginFetchTime = Date.now();
-      return margin;
-    })
-    .catch(() => 0)
-    .finally(() => {
-      marginInflight = null;
-    });
-
-  return marginInflight;
 };
 
 /**

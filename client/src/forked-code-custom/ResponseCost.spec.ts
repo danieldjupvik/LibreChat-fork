@@ -90,4 +90,31 @@ describe('ResponseCost snapshot breakdown', () => {
       }),
     );
   });
+
+  it('splits LiteLLM completion tokens into visible output and reasoning at base rates', () => {
+    const breakdown = buildBreakdownFromRates({
+      model: 'claude-opus-4-8-reasoning',
+      inputTokens: 263,
+      outputTokens: 2531,
+      reasoningTokens: 18,
+      rates: {
+        input_cost_per_token: 5 / 1_000_000,
+        output_cost_per_token: 25 / 1_000_000,
+      },
+      lockedRates: true,
+    });
+
+    expect(breakdown).toEqual(
+      expect.objectContaining({
+        inputTokens: 263,
+        outputTokens: 2531,
+        effectiveOutputTokens: 2513,
+        reasoningTokens: 18,
+      }),
+    );
+    expect(breakdown.inputCost).toBeCloseTo(0.001315, 12);
+    expect(breakdown.outputCost).toBeCloseTo(0.062825, 12);
+    expect(breakdown.reasoningCost).toBeCloseTo(0.00045, 12);
+    expect(breakdown.totalCost).toBeCloseTo(0.06459, 12);
+  });
 });
