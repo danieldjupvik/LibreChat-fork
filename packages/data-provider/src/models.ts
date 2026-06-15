@@ -42,6 +42,8 @@ export type TModelSpec = {
   showIconInHeader?: boolean;
   /** Show this spec's label and description on the chat landing in place of the greeting. */
   showOnLanding?: boolean;
+  /** Conversation starter prompts shown on the chat landing while this spec is active. */
+  conversation_starters?: string[];
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
   iconCapabilities?: ModelCapabilityType[];
@@ -93,6 +95,7 @@ export const tModelSpecSchema = z.object({
   showIconInMenu: z.boolean().optional(),
   showIconInHeader: z.boolean().optional(),
   showOnLanding: z.boolean().optional(),
+  conversation_starters: z.array(z.string()).optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
   iconCapabilities: z
