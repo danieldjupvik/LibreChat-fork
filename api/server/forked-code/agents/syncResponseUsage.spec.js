@@ -111,7 +111,7 @@ describe('syncResponseUsage', () => {
         reasoning: reasoningTokens * 0.000015,
       });
       expect(mockSaveMessage).toHaveBeenCalledWith(
-        expect.anything(),
+        expect.objectContaining({ userId: 'user-1' }),
         expect.objectContaining({
           messageId: 'message-1',
           conversationId: 'conversation-1',
