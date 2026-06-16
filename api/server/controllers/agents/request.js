@@ -13,6 +13,10 @@ const {
   isUnpersistedPreliminaryParent,
 } = require('@librechat/api');
 const { disposeClient, clientRegistry, requestDataMap } = require('~/server/cleanup');
+const {
+  getMCPRequestContext,
+  cleanupMCPRequestContextForReq,
+} = require('~/server/services/MCPRequestContext');
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
@@ -140,6 +144,14 @@ function getAgentResponseModel(req, endpointOption) {
   return getEndpointResponseModel(endpointOption);
 }
 
+async function finishResumableRequest(req, userId) {
+  try {
+    await cleanupMCPRequestContextForReq(req);
+  } finally {
+    await decrementPendingRequest(userId);
+  }
+}
+
 function rejectPreliminaryParentMessageId(res) {
   return res.status(409).json({
     error:
@@ -210,6 +222,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId);
     const jobCreatedAt = job.createdAt; // Capture creation time to detect job replacement
     req._resumableStreamId = streamId;
+    getMCPRequestContext(req, undefined, { cleanupOnResponse: false });
 
     // Send JSON response IMMEDIATELY so client can connect to SSE stream
     // This is critical: tool loading (MCP OAuth) may emit events that the client needs to receive
@@ -317,7 +330,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
     if (job.abortController.signal.aborted) {
       GenerationJobManager.completeJob(streamId, 'Request aborted during initialization');
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
       return;
     }
 
@@ -563,7 +576,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           acceptsTitleEvents = false;
           resolveConvoReady();
           // Still decrement pending request since we incremented at start
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
           if (immediateTitlePromise) {
             immediateTitlePromise.finally(() => {
               if (client) {
@@ -613,7 +626,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId);
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
         } else {
           const finalEvent = {
             final: true,
@@ -633,7 +646,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
           await GenerationJobManager.emitDone(streamId, finalEvent);
           GenerationJobManager.completeJob(streamId, 'Request aborted');
-          await decrementPendingRequest(userId);
+          await finishResumableRequest(req, userId);
         }
 
         if (titleTiming === 'immediate') {
@@ -691,7 +704,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           GenerationJobManager.completeJob(streamId, error.message);
         }
 
-        await decrementPendingRequest(userId);
+        await finishResumableRequest(req, userId);
 
         // Defer disposal until any immediate title settles (it holds the run/req).
         if (immediateTitlePromise) {
@@ -715,7 +728,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
       );
       GenerationJobManager.completeJob(streamId, err.message);
-      await decrementPendingRequest(userId);
+      await finishResumableRequest(req, userId);
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
@@ -726,7 +739,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       await GenerationJobManager.emitError(streamId, error.message || 'Failed to start generation');
     }
     GenerationJobManager.completeJob(streamId, error.message);
-    await decrementPendingRequest(userId);
+    await finishResumableRequest(req, userId);
     if (client) {
       disposeClient(client);
     }
