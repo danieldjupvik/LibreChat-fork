@@ -246,18 +246,14 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               {description}
             </div>
           ))}
-<<<<<<< HEAD
-        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
-        <PromptSuggestions />
-||||||| 9e74cc0e5
-=======
         {selectedAgent && (
           <AgentContact
             agent={selectedAgent}
             className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
           />
         )}
->>>>>>> upstream/main
+        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
+        <PromptSuggestions />
       </div>
     </div>
   );
