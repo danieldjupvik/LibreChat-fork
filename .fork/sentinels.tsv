@@ -43,3 +43,4 @@ route-guard	client/src/routes/index.tsx	Fork-only auth/subscription route gating
 brand-manifest	client/vite.config.ts	PWA manifest fork branding (name + short_name)	short_name: 'Daniel AI'
 brand-title	client/index.html	Page title and meta description (fork branding)	<title>Daniel AI</title>
 claude-fork-pointer	CLAUDE.md	Fork guidance entrypoint: @FORK.md import + FORK-SENTINEL rule for agents	Read **`FORK.md`**
+jest-forked-barrel-stub	client/jest.config.cjs	Stub the fork-only barrel in jest so upstream tests do not load ~/store	jestBarrelStub
