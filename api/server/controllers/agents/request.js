@@ -34,10 +34,7 @@ const {
 const { handleAbortError } = require('~/server/middleware');
 const { logViolation } = require('~/cache');
 const { saveMessage, getMessages, getConvo } = require('~/models');
-<<<<<<< HEAD
 const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
-||||||| f7bc50ae5
-=======
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -53,7 +50,6 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   }
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
->>>>>>> upstream/main
 
 function createCloseHandler(abortController) {
   return function (manual) {
