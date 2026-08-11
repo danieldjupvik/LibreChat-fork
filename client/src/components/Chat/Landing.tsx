@@ -15,13 +15,7 @@ import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAuthContext, useGreeting } from '~/hooks';
 import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-<<<<<<< HEAD
 import { PromptSuggestions } from '~/forked-code-custom';
-import { useLocalize, useAuthContext } from '~/hooks';
-||||||| 45cc53c40
-import { useLocalize, useAuthContext } from '~/hooks';
-=======
->>>>>>> upstream/main
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-presentation text-text-primary dark:after:shadow-none ';
