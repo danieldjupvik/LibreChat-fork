@@ -13,6 +13,7 @@ import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
+import { RouteGuard } from '~/forked-code-custom';
 import StartupLayout from './Layouts/Startup';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
@@ -21,7 +22,6 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
-import { RouteGuard } from '~/forked-code-custom';
 
 const AuthLayout = () => (
   <AuthContextProvider>
