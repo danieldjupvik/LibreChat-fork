@@ -25,6 +25,7 @@ const {
   isSteerPreemptSupported,
   buildRecoveredSteerPayload,
   deleteAgentCheckpoint,
+  getAttachmentTitleText,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -50,15 +51,23 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
 
-function getResourceRecoveryFailure(error) {
-  if (error?.code !== ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
-    return null;
+function getInitializationFailure(error) {
+  if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
+    return {
+      status: 409,
+      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      error: error.message || 'Attached resources must be restored before retrying.',
+    };
   }
 
+  const candidateStatus = error?.status ?? error?.statusCode;
+  if (!Number.isInteger(candidateStatus) || candidateStatus < 400 || candidateStatus >= 600) {
+    return null;
+  }
   return {
-    status: 409,
-    code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-    error: error.message || 'Attached resources must be restored before retrying.',
+    status: candidateStatus,
+    ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+    error: error?.message || 'Failed to start generation',
   };
 }
 
@@ -1326,7 +1335,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         if (titleEligible && titleTiming === 'immediate') {
           immediateTitlePromise = addTitle(req, {
-            text,
+            text: text || getAttachmentTitleText(req.body.files),
             conversationId,
             client,
             immediate: true,
@@ -1723,7 +1732,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
         } else if (shouldGenerateTitle) {
           addTitle(req, {
-            text,
+            text: text || getAttachmentTitleText(req.body.files),
             response: { ...response },
             client,
           })
@@ -1841,7 +1850,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     });
   } catch (error) {
     logger.error('[ResumableAgentController] Initialization error:', error);
-    const resourceRecoveryFailure = getResourceRecoveryFailure(error);
+    const initializationFailure = getInitializationFailure(error);
     try {
       if (!res.headersSent) {
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
@@ -1882,11 +1891,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             },
             generationProtocolVersion,
           );
-        } else if (resourceRecoveryFailure) {
+        } else if (initializationFailure) {
           sendGenerationJson(
             res,
-            resourceRecoveryFailure.status,
-            resourceRecoveryFailure,
+            initializationFailure.status,
+            initializationFailure,
             generationProtocolVersion,
           );
         } else {
@@ -1917,8 +1926,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
     if (jobCreatedAt != null) {
-      const initializationError = resourceRecoveryFailure
-        ? JSON.stringify(resourceRecoveryFailure)
+      const initializationError = initializationFailure
+        ? JSON.stringify(initializationFailure)
         : error.message || 'Failed to start generation';
       await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt).catch(
         (completeErr) => {
