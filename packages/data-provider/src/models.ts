@@ -10,6 +10,8 @@ import {
 } from './schemas';
 import { MAX_SUBAGENTS } from './limits';
 
+type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
+
 export type ModelCapabilityType =
   | 'reasoning'
   | 'upload_image'
@@ -95,7 +97,7 @@ export type TModelSpec = {
   artifacts?: string | boolean;
   mcpServers?: string[];
   skills?: boolean | string[];
-  subagents?: AgentSubagentsConfig;
+  subagents?: ModelSpecSubagentsConfig;
 };
 
 // Define badges schema for validation
