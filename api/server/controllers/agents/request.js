@@ -33,14 +33,8 @@ const {
   cleanupMCPRequestContextForReq,
 } = require('~/server/services/MCPRequestContext');
 const { logViolation } = require('~/cache');
-<<<<<<< HEAD
-const { saveMessage, getMessages, getConvo } = require('~/models');
-const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
-||||||| 57ea1137f
-const { saveMessage, getMessages, getConvo } = require('~/models');
-=======
 const { saveMessage, getMessages, getConvo, isAgentTriggerPrincipalActive } = require('~/models');
->>>>>>> upstream/main
+const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,

@@ -10,17 +10,14 @@ import {
 } from './schemas';
 import { MAX_SUBAGENTS } from './limits';
 
-<<<<<<< HEAD
+type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
+
 export type ModelCapabilityType =
   | 'reasoning'
   | 'upload_image'
   | 'web_search'
   | 'experimental'
   | 'deep_research';
-||||||| 57ea1137f
-=======
-type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
->>>>>>> upstream/main
 
 export type TModelSpec = {
   name: string;
