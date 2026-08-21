@@ -100,7 +100,6 @@ export type TModelSpec = {
   subagents?: ModelSpecSubagentsConfig;
 };
 
-<<<<<<< HEAD
 // Define badges schema for validation
 export const badgesSchema = z.object({
   disabled: z.boolean().optional(),
@@ -111,18 +110,6 @@ export const badgesSchema = z.object({
   maxContextToken: z.number().optional(),
 });
 
-export const modelSpecSubagentsSchema = z.object({
-  enabled: z.boolean().optional(),
-  allowSelf: z.boolean().optional(),
-  agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
-});
-||||||| 16e4d1419
-export const modelSpecSubagentsSchema = z.object({
-  enabled: z.boolean().optional(),
-  allowSelf: z.boolean().optional(),
-  agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
-});
-=======
 export const modelSpecSubagentsSchema = z
   .object({
     enabled: z.boolean().optional(),
@@ -139,7 +126,6 @@ export const modelSpecSubagentsSchema = z
       });
     }
   });
->>>>>>> upstream/main
 
 /**
  * The endpoint a spec targets. Only the agents endpoint can serve a preset that
