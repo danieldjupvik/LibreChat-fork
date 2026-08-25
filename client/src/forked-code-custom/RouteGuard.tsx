@@ -2,6 +2,7 @@ import { useState, useEffect, ReactNode, useCallback, useRef } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchSubscriptionStatus } from './utils';
 import SubscriptionRequiredPage from './SubscriptionRequiredPage';
+import { useTokenConfigRefresh } from './modelPricing';
 
 type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error';
 
@@ -27,6 +28,7 @@ const publicPaths = [
  */
 const RouteGuard = ({ children }: RouteGuardProps) => {
   const { user, isAuthenticated, logout } = useAuthContext();
+  useTokenConfigRefresh(isAuthenticated && Boolean(user?.id));
   const [checkStatus, setCheckStatus] = useState<CheckStatus>('pending');
   const [denialReason, setDenialReason] = useState<DenialReason>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);

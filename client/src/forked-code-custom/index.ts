@@ -1,5 +1,4 @@
-import { initLiteLLMModelData, useModelPricingInfo } from './litellmInfoAdapter';
-import ResponseCost from './ResponseCost';
+import { useModelPricingInfo } from './modelPricing';
 import { initialize, cleanup } from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
@@ -15,12 +14,10 @@ import RouteGuard from './RouteGuard';
  */
 
 export {
-  ResponseCost,
   ShortcutsHelp,
   ForkedCustomizations,
   initialize,
   cleanup,
-  initLiteLLMModelData,
   ModelBadges,
   useModelPricingInfo,
   CapabilityIcons,

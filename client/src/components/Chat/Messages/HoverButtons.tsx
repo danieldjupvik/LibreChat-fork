@@ -11,7 +11,6 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
-import { ResponseCost } from '~/forked-code-custom';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -268,9 +267,6 @@ const HoverButtons = ({
           className="active"
         />
       )}
-
-      {/* FORK-SENTINEL:response-cost — fork-only per-message cost display */}
-      <ResponseCost message={message} conversation={conversation} isLast={isLast} />
 
       {/* Continue Button */}
       {!isSubagentThreadReadOnly && continueSupported && (

@@ -27,14 +27,18 @@
 #   my-feature	client/src/components/Chat/Example.tsx	What breaks if this edit vanishes	<ExampleWidget
 litellm-streamusage	api/server/controllers/agents/client.js	Opt LiteLLM agents into streamUsage so upstream createRun keeps streamed token usage	applyLiteLLMStreamUsage(
 litellm-response-usage	api/server/controllers/agents/client.js	Preserve LiteLLM raw OpenAI usage details for token and cost snapshots	preserveLiteLLMUsage(
-sync-response-usage	api/server/controllers/agents/request.js	Set token/cost usage on the response before the final SSE event	await syncResponseUsage(
-sync-response-usage-persist	api/server/controllers/agents/request.js	Background-persist cost metadata without blocking the SSE final event	persist: true
+litellm-token-config	api/server/middleware/config/app.js	Inject LiteLLM pricing into every config path in the middleware (feeds token-config + endpointTokenConfig)	applyLiteLLMTokenConfig(await getBaseAppConfig(options))
 init-forked-code	api/server/index.js	Mount forked-code routes/extensions onto the Express app	initForkedCode(
 modelspec-badges	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only model badges under the spec description	<ModelBadges
 modelspec-capabilities	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only capability icons aligned to the spec row top	<CapabilityIcons
 searchresults-badges	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only model badges in endpoint search results	<ModelBadges
 searchresults-capabilities	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only capability icons in endpoint search results	<CapabilityIcons
-response-cost	client/src/components/Chat/Messages/HoverButtons.tsx	Fork-only per-message cost display	<ResponseCost
+spec-schema-capability-type	packages/data-provider/src/models.ts	Fork-only ModelCapabilityType union that CapabilityIcons renders from	export type ModelCapabilityType
+spec-schema-icon-capabilities	packages/data-provider/src/models.ts	Fork-only iconCapabilities field on TModelSpec	iconCapabilities?: ModelCapabilityType[];
+spec-schema-badges	packages/data-provider/src/models.ts	Fork-only badges override field on TModelSpec (ModelBadges/useModelPricingInfo read it)	badges?: {
+spec-schema-badges-zod	packages/data-provider/src/models.ts	Fork-only badgesSchema runtime validation	export const badgesSchema
+spec-schema-icon-capabilities-zod	packages/data-provider/src/models.ts	Fork-only iconCapabilities accepted from librechat.yaml modelSpecs	iconCapabilities: z
+spec-schema-badges-field	packages/data-provider/src/models.ts	Fork-only badges accepted from librechat.yaml modelSpecs	badges: badgesSchema.optional(),
 customer-portal-menu	client/src/components/Nav/AccountSettings.tsx	Fork-only billing portal entry in the account menu	<CustomerPortalMenuItem
 forked-customizations	client/src/main.jsx	Mounts fork-only global customizations and custom CSS import	<ForkedCustomizations
 route-guard	client/src/routes/index.tsx	Fork-only auth/subscription route gating around app routes	<RouteGuard

@@ -1,6 +1,12 @@
 const { logger } = require('@librechat/data-schemas');
 const { getAppConfigOptionsFromUser } = require('@librechat/api');
-const { getAppConfig } = require('~/server/services/Config');
+const { applyLiteLLMTokenConfig } = require('~/server/forked-code/litellm/tokenConfig');
+const { getAppConfig: getBaseAppConfig } = require('~/server/services/Config');
+
+// FORK-SENTINEL:litellm-token-config — inject LiteLLM pricing on every config path in this middleware
+const getAppConfig = async (options) => {
+  return applyLiteLLMTokenConfig(await getBaseAppConfig(options));
+};
 
 const configMiddleware = async (req, res, next) => {
   try {
