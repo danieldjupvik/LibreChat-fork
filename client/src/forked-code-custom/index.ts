@@ -3,7 +3,6 @@ import ResponseCost from './ResponseCost';
 import { initialize, cleanup } from './KeyboardShortcuts';
 import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
-import { PromptSuggestions } from './PromptSuggestions';
 import { ModelBadges } from './modelBadges';
 import { CapabilityIcons } from './CapabilityIcons';
 import RouteGuard from './RouteGuard';
@@ -22,7 +21,6 @@ export {
   initialize,
   cleanup,
   initLiteLLMModelData,
-  PromptSuggestions,
   ModelBadges,
   useModelPricingInfo,
   CapabilityIcons,

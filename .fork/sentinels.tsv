@@ -30,8 +30,6 @@ litellm-response-usage	api/server/controllers/agents/client.js	Preserve LiteLLM 
 sync-response-usage	api/server/controllers/agents/request.js	Set token/cost usage on the response before the final SSE event	await syncResponseUsage(
 sync-response-usage-persist	api/server/controllers/agents/request.js	Background-persist cost metadata without blocking the SSE final event	persist: true
 init-forked-code	api/server/index.js	Mount forked-code routes/extensions onto the Express app	initForkedCode(
-landing-suggestions-margin	client/src/components/Chat/Landing.tsx	Extra bottom margin so PromptSuggestions clears the input	mb-28
-prompt-suggestions	client/src/components/Chat/Landing.tsx	Fork-only starter prompt suggestions on the landing screen	<PromptSuggestions
 modelspec-badges	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only model badges under the spec description	<ModelBadges
 modelspec-capabilities	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only capability icons aligned to the spec row top	<CapabilityIcons
 searchresults-badges	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only model badges in endpoint search results	<ModelBadges
