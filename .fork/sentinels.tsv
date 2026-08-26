@@ -27,16 +27,11 @@
 #   my-feature	client/src/components/Chat/Example.tsx	What breaks if this edit vanishes	<ExampleWidget
 litellm-streamusage	api/server/controllers/agents/client.js	Opt LiteLLM agents into streamUsage so upstream createRun keeps streamed token usage	applyLiteLLMStreamUsage(
 litellm-response-usage	api/server/controllers/agents/client.js	Preserve LiteLLM raw OpenAI usage details for token and cost snapshots	preserveLiteLLMUsage(
-sync-response-usage	api/server/controllers/agents/request.js	Set token/cost usage on the response before the final SSE event	await syncResponseUsage(
-sync-response-usage-persist	api/server/controllers/agents/request.js	Background-persist cost metadata without blocking the SSE final event	persist: true
 init-forked-code	api/server/index.js	Mount forked-code routes/extensions onto the Express app	initForkedCode(
-landing-suggestions-margin	client/src/components/Chat/Landing.tsx	Extra bottom margin so PromptSuggestions clears the input	mb-28
-prompt-suggestions	client/src/components/Chat/Landing.tsx	Fork-only starter prompt suggestions on the landing screen	<PromptSuggestions
 modelspec-badges	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only model badges under the spec description	<ModelBadges
 modelspec-capabilities	client/src/components/Chat/Menus/Endpoints/components/ModelSpecItem.tsx	Fork-only capability icons aligned to the spec row top	<CapabilityIcons
 searchresults-badges	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only model badges in endpoint search results	<ModelBadges
 searchresults-capabilities	client/src/components/Chat/Menus/Endpoints/components/SearchResults.tsx	Fork-only capability icons in endpoint search results	<CapabilityIcons
-response-cost	client/src/components/Chat/Messages/HoverButtons.tsx	Fork-only per-message cost display	<ResponseCost
 customer-portal-menu	client/src/components/Nav/AccountSettings.tsx	Fork-only billing portal entry in the account menu	<CustomerPortalMenuItem
 forked-customizations	client/src/main.jsx	Mounts fork-only global customizations and custom CSS import	<ForkedCustomizations
 route-guard	client/src/routes/index.tsx	Fork-only auth/subscription route gating around app routes	<RouteGuard
