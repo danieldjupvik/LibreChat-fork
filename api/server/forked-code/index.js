@@ -1,4 +1,5 @@
 const forkedRoutes = require('./routes');
+const { warmLiteLLMModelCache } = require('./litellm/modelInfoCache');
 
 /**
  * Initialize all forked code customizations
@@ -6,10 +7,8 @@ const forkedRoutes = require('./routes');
  * @param {Express} app - Express application instance
  */
 const initForkedCode = (app) => {
-  // Register forked routes under the /api/forked path
   app.use('/api/forked', forkedRoutes);
-
-  // Add any other forked code initializations here
+  void warmLiteLLMModelCache();
 };
 
 module.exports = {

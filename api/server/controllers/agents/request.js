@@ -1572,6 +1572,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const response = await sendPromise;
+
         // HITL: the turn paused for human review (see AgentClient.handleRunInterrupt).
         // The job is already `requires_action` with the pending action persisted and
         // emitted to the client; the resume route owns finishing this turn. Settle and
@@ -1772,6 +1773,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
+
         if (!terminalClaim) {
           /** Stop/replacement won before the response persistence hook. The
            * BaseClient contract skipped its completed response write; cancel

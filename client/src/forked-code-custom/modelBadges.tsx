@@ -1,10 +1,10 @@
-import { memo } from 'react';
 import React from 'react';
-import type { TModelSpec } from 'librechat-data-provider';
-import { User, Server, Gift, Target } from 'lucide-react';
+import { memo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { useModelPricingInfo } from './litellmInfoAdapter';
+import { User, Server, Gift, Target } from 'lucide-react';
+import type { TModelSpec } from 'librechat-data-provider';
 import { useNewModelCheck } from './openRouterAdapter';
+import { useModelPricingInfo } from './modelPricing';
 
 /**
  * Format token count for display (e.g. 128000 → 128K)
@@ -133,71 +133,41 @@ const ContextBadge = memo(({ tokens }: { tokens: number }) => {
 });
 
 /**
- * Pre-memoized badges component to keep ModelSpecItem clean
+ * Pre-memoized badges component to keep ModelSpecItem clean.
+ *
+ * Everything is derived from the spec: `useModelPricingInfo` resolves the
+ * server's token config and lets an explicit `spec.badges` entry in
+ * `librechat.yaml` override any field. That yaml block is the single override
+ * surface — deliberately not mirrored as component props, so free/priced is
+ * decided in exactly one place.
  */
-export const ModelBadges = memo(
-  ({
-    spec,
-    inputPrice: passedInputPrice,
-    outputPrice: passedOutputPrice,
-    showPricing: passedShowPricing,
-    isFree: passedIsFree,
-    maxTokens: passedMaxTokens,
-    disabled: passedDisabled,
-  }: {
-    spec?: TModelSpec;
-    inputPrice?: number | null;
-    outputPrice?: number | null;
-    showPricing?: boolean;
-    isFree?: boolean;
-    maxTokens?: number | null;
-    disabled?: boolean;
-  }) => {
-    // Get pricing data from the hook in litellmInfoAdapter.ts
-    const pricingInfo = useModelPricingInfo(spec ?? ({} as TModelSpec));
-    const modelName = spec?.preset?.model || '';
+export const ModelBadges = memo(({ spec }: { spec?: TModelSpec }): React.ReactElement | null => {
+  const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } =
+    useModelPricingInfo(spec);
+  const modelName = spec?.preset?.model || '';
+  const endpoint = spec?.preset?.endpoint || '';
+  const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
 
-    // Get provider information from the model's endpoint
-    const endpoint = spec?.preset?.endpoint || '';
+  if (disabled) {
+    return null;
+  }
 
-    // Check if model is new using OpenRouter data
-    const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
+  if (!showPricing && !maxTokens && !isFree) {
+    return null;
+  }
 
-    // Use passed props if available, otherwise use hook data
-    const inputPrice = passedInputPrice ?? pricingInfo?.inputPrice ?? null;
-    const outputPrice = passedOutputPrice ?? pricingInfo?.outputPrice ?? null;
-    const showPricing = passedShowPricing ?? pricingInfo?.showPricing ?? true;
-    const isFree = passedIsFree ?? pricingInfo?.isFree ?? false;
-    const maxTokens = passedMaxTokens ?? pricingInfo?.maxTokens ?? null;
-    const disabled = passedDisabled ?? pricingInfo?.disabled ?? false;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2 sm:flex-nowrap">
+      {isNew && <NewBadge createdAt={createdAt} />}
 
-    // If badges are explicitly disabled, show nothing
-    if (disabled) {
-      return null;
-    }
-
-    // Don't show anything if no pricing info and no token info
-    if (!showPricing && !maxTokens && !isFree) {
-      return null;
-    }
-
-    // Check if both input and output prices are 0 (free model)
-    const isZeroPriced = inputPrice === 0 && outputPrice === 0;
-    const shouldShowFree = isFree || isZeroPriced;
-
-    return (
-      <div className="mt-1 flex flex-wrap items-center gap-2 sm:flex-nowrap">
-        {isNew && <NewBadge createdAt={createdAt} />}
-
-        {shouldShowFree && <FreeBadge />}
-        {showPricing && !shouldShowFree && inputPrice !== null && (
-          <PriceBadge type="input" price={inputPrice} />
-        )}
-        {showPricing && !shouldShowFree && outputPrice !== null && (
-          <PriceBadge type="output" price={outputPrice} />
-        )}
-        {maxTokens !== null && maxTokens !== undefined && <ContextBadge tokens={maxTokens} />}
-      </div>
-    );
-  },
-);
+      {isFree && <FreeBadge />}
+      {showPricing && !isFree && inputPrice !== null && (
+        <PriceBadge type="input" price={inputPrice} />
+      )}
+      {showPricing && !isFree && outputPrice !== null && (
+        <PriceBadge type="output" price={outputPrice} />
+      )}
+      {maxTokens !== null && <ContextBadge tokens={maxTokens} />}
+    </div>
+  );
+});
