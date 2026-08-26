@@ -1,9 +1,9 @@
-import { useModelPricingInfo } from './modelPricing';
 import { initialize, cleanup } from './KeyboardShortcuts';
-import ShortcutsHelp from './ShortcutsHelp';
 import ForkedCustomizations from './ForkedCustomizations';
-import { ModelBadges } from './modelBadges';
+import { useModelPricingInfo } from './modelPricing';
 import { CapabilityIcons } from './CapabilityIcons';
+import ShortcutsHelp from './ShortcutsHelp';
+import { ModelBadges } from './modelBadges';
 import RouteGuard from './RouteGuard';
 
 /**

@@ -7,7 +7,6 @@ const CACHE_DURATION_MS = 60 * 60 * 1000;
  *  a background refresh on every request (the timestamp stays stale). */
 const FAILURE_BACKOFF_MS = 60 * 1000;
 const REQUEST_TIMEOUT_MS = 5000;
-const DEFAULT_BASE_URL = 'https://litellm.danieldjupvik.com';
 
 /** Complete last-known-good pricing snapshot. */
 let cache = null;
@@ -126,11 +125,11 @@ const hasActiveProviderDiscounts = (discounts) =>
 
 async function fetchLiteLLMPricingSnapshot() {
   const apiKey = process.env.LITELLM_API_KEY;
-  if (!apiKey) {
+  const baseURL = process.env.LITELLM_BASE_URL?.trim();
+  if (!apiKey || !baseURL) {
     return null;
   }
 
-  const baseURL = process.env.LITELLM_BASE_URL || DEFAULT_BASE_URL;
   const requestConfig = {
     headers: {
       Authorization: `Bearer ${apiKey}`,

@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
+import { initialize, cleanup } from './KeyboardShortcuts';
 import { initOpenRouterData } from './openRouterAdapter';
 import ShortcutsHelp from './ShortcutsHelp';
-import { initialize, cleanup } from './KeyboardShortcuts';
 
 /**
  * ForkedCustomizations component

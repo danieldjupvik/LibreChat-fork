@@ -1,9 +1,9 @@
+import React from 'react';
 import fs from 'fs';
 import path from 'path';
-import React from 'react';
 import { render } from '@testing-library/react';
-import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
+import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 
 /**
  * Guards the fork's `iconURL` SVG theming rule in
@@ -50,7 +50,7 @@ function readIconSelectors(): { light: string; dark: string } {
 }
 
 /** Renders inside a `.dark` ancestor so the dark-mode selector can match. */
-function renderThemed(ui: React.ReactElement) {
+function renderThemed(ui: React.ReactElement): HTMLDivElement {
   const host = document.createElement('div');
   host.className = 'dark';
   document.body.appendChild(host);
@@ -61,7 +61,7 @@ function renderThemed(ui: React.ReactElement) {
 }
 
 /** The real in-chat header: upstream's MessageRow frame around the real icon. */
-const messageHeader = () => (
+const messageHeader = (): React.ReactElement => (
   <MessageRow
     label="Claude"
     isCreatedByUser={false}

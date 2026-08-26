@@ -1,8 +1,8 @@
 import { useState, useEffect, ReactNode, useCallback, useRef } from 'react';
-import { useAuthContext } from '~/hooks/AuthContext';
-import { fetchSubscriptionStatus } from './utils';
 import SubscriptionRequiredPage from './SubscriptionRequiredPage';
 import { useTokenConfigRefresh } from './modelPricing';
+import { useAuthContext } from '~/hooks/AuthContext';
+import { fetchSubscriptionStatus } from './utils';
 
 type CheckStatus = 'pending' | 'access-granted' | 'subscription-required' | 'error';
 

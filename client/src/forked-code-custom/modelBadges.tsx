@@ -1,10 +1,10 @@
-import { memo } from 'react';
 import React from 'react';
-import type { TModelSpec } from 'librechat-data-provider';
-import { User, Server, Gift, Target } from 'lucide-react';
+import { memo } from 'react';
 import { TooltipAnchor } from '@librechat/client';
-import { useModelPricingInfo } from './modelPricing';
+import { User, Server, Gift, Target } from 'lucide-react';
+import type { TModelSpec } from 'librechat-data-provider';
 import { useNewModelCheck } from './openRouterAdapter';
+import { useModelPricingInfo } from './modelPricing';
 
 /**
  * Format token count for display (e.g. 128000 → 128K)
@@ -141,23 +141,17 @@ const ContextBadge = memo(({ tokens }: { tokens: number }) => {
  * surface — deliberately not mirrored as component props, so free/priced is
  * decided in exactly one place.
  */
-export const ModelBadges = memo(({ spec }: { spec?: TModelSpec }) => {
+export const ModelBadges = memo(({ spec }: { spec?: TModelSpec }): React.ReactElement | null => {
   const { inputPrice, outputPrice, showPricing, isFree, maxTokens, disabled } =
     useModelPricingInfo(spec);
   const modelName = spec?.preset?.model || '';
-
-  // Get provider information from the model's endpoint
   const endpoint = spec?.preset?.endpoint || '';
-
-  // Check if model is new using OpenRouter data
   const { isNew, createdAt } = useNewModelCheck(modelName, endpoint);
 
-  // If badges are explicitly disabled, show nothing
   if (disabled) {
     return null;
   }
 
-  // Don't show anything if no pricing info and no token info
   if (!showPricing && !maxTokens && !isFree) {
     return null;
   }

@@ -64,11 +64,13 @@ const tokenConfigFor = async (litellmEndpoint) =>
 
 describe('applyLiteLLMTokenConfig', () => {
   const originalApiKey = process.env.LITELLM_API_KEY;
+  const originalBaseURL = process.env.LITELLM_BASE_URL;
   const originalCostMarginEnabled = process.env.LITELLM_COST_MARGIN_ENABLED;
 
   beforeEach(() => {
     resetLiteLLMModelCache();
     process.env.LITELLM_API_KEY = 'test-key';
+    process.env.LITELLM_BASE_URL = 'https://litellm.example.com';
     process.env.LITELLM_COST_MARGIN_ENABLED = 'true';
     axios.get.mockReset();
   });
@@ -78,6 +80,11 @@ describe('applyLiteLLMTokenConfig', () => {
       delete process.env.LITELLM_API_KEY;
     } else {
       process.env.LITELLM_API_KEY = originalApiKey;
+    }
+    if (originalBaseURL === undefined) {
+      delete process.env.LITELLM_BASE_URL;
+    } else {
+      process.env.LITELLM_BASE_URL = originalBaseURL;
     }
     if (originalCostMarginEnabled === undefined) {
       delete process.env.LITELLM_COST_MARGIN_ENABLED;
@@ -149,9 +156,9 @@ describe('applyLiteLLMTokenConfig', () => {
 
     expect(axios.get).toHaveBeenCalledTimes(3);
     expect(axios.get.mock.calls.map(([url]) => url)).toEqual([
-      'https://litellm.danieldjupvik.com/model/info',
-      'https://litellm.danieldjupvik.com/config/cost_discount_config',
-      'https://litellm.danieldjupvik.com/config/cost_margin_config',
+      'https://litellm.example.com/model/info',
+      'https://litellm.example.com/config/cost_discount_config',
+      'https://litellm.example.com/config/cost_margin_config',
     ]);
     const [, modelRequest] = axios.get.mock.calls[0];
     const [, discountRequest] = axios.get.mock.calls[1];
@@ -187,7 +194,7 @@ describe('applyLiteLLMTokenConfig', () => {
       });
       expect(axios.get).toHaveBeenCalledTimes(1);
       expect(axios.get).toHaveBeenCalledWith(
-        'https://litellm.danieldjupvik.com/model/info',
+        'https://litellm.example.com/model/info',
         expect.objectContaining({ timeout: 5000 }),
       );
     },
@@ -848,6 +855,15 @@ describe('applyLiteLLMTokenConfig', () => {
 
   it('never requests LiteLLM without an API key', async () => {
     delete process.env.LITELLM_API_KEY;
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+    await warmLiteLLMModelCache();
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  it('never requests LiteLLM without an explicit base URL', async () => {
+    delete process.env.LITELLM_BASE_URL;
     const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
 
     expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);

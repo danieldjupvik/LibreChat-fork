@@ -75,7 +75,7 @@ Origin commit: `b0e4d8af4` (feat: Integrate PromptSuggestions component, #5).
 
 5. Re-add both rows to `.fork/sentinels.tsv` (TAB-separated):
 
-   ```
+   ```text
    landing-suggestions-margin	client/src/components/Chat/Landing.tsx	Extra bottom margin so PromptSuggestions clears the input	mb-28
    prompt-suggestions	client/src/components/Chat/Landing.tsx	Fork-only starter prompt suggestions on the landing screen	<PromptSuggestions
    ```

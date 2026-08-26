@@ -47,11 +47,13 @@ const runMiddleware = async (req = { user: { id: 'u1' }, path: '/x' }) => {
  */
 describe('LiteLLM token-config bridge (integration)', () => {
   const originalApiKey = process.env.LITELLM_API_KEY;
+  const originalBaseURL = process.env.LITELLM_BASE_URL;
   const originalCostMarginEnabled = process.env.LITELLM_COST_MARGIN_ENABLED;
 
   beforeEach(() => {
     resetLiteLLMModelCache();
     process.env.LITELLM_API_KEY = 'test-key';
+    process.env.LITELLM_BASE_URL = 'https://litellm.example.com';
     process.env.LITELLM_COST_MARGIN_ENABLED = 'true';
     axios.get.mockReset();
     axios.get.mockImplementation((url) => {
@@ -89,6 +91,11 @@ describe('LiteLLM token-config bridge (integration)', () => {
       delete process.env.LITELLM_API_KEY;
     } else {
       process.env.LITELLM_API_KEY = originalApiKey;
+    }
+    if (originalBaseURL === undefined) {
+      delete process.env.LITELLM_BASE_URL;
+    } else {
+      process.env.LITELLM_BASE_URL = originalBaseURL;
     }
     if (originalCostMarginEnabled === undefined) {
       delete process.env.LITELLM_COST_MARGIN_ENABLED;

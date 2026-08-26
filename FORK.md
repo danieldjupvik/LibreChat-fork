@@ -160,7 +160,7 @@ The fork-owned `initForkedCode` starts the cache warm-up before the server begin
 handling requests. With margin support enabled, one hourly refresh fetches all
 three LiteLLM endpoints concurrently:
 
-```
+```text
 initForkedCode → atomic LiteLLM pricing refresh (server-side, authenticated, cached 1h)
                    ├─ GET /model/info
                    ├─ GET /config/cost_discount_config (only when explicitly enabled)
@@ -254,7 +254,7 @@ for these cases. The fork does not query LiteLLM spend logs per response or
 extend upstream's pricing schema.
 
 **Deployment.** Requires `interface.contextCost: true` in `librechat.yaml`
-(currency left unset ⇒ USD) and `LITELLM_API_KEY` (+ optional `LITELLM_BASE_URL`)
+(currency left unset ⇒ USD), `LITELLM_API_KEY`, and `LITELLM_BASE_URL`
 in the environment. `librechat.yaml` is gitignored — it is deployment config, not
 repo state. LiteLLM's `cost_discount_config` and `cost_margin_config` remain
 authoritative; LibreChat has no duplicate adjustment values. Set
@@ -270,7 +270,7 @@ model list.
 
 All chat requests go through `/api/agents/chat/:endpoint` (the `/:endpoint` route handles custom endpoints like LiteLLM as "ephemeral agents"). The flow:
 
-```
+```text
 Frontend → POST /api/agents/chat/LiteLLM
   → configMiddleware → getAppConfig → applyLiteLLMTokenConfig → req.config
     → ResumableAgentController (api/server/controllers/agents/request.js)

@@ -31,7 +31,7 @@ router.get('/model-info', requireJwtAuth, async (req, res) => {
 
     // Cache header to reduce load on LiteLLM service
     // Cache for 1 hour (3600 seconds)
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'private, max-age=3600');
 
     return res.json(response.data);
   } catch (error) {
