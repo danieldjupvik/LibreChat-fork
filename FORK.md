@@ -157,33 +157,66 @@ It has exactly one upstream seam, `api/server/middleware/config/app.js`
 `getAppConfig` binding, so its success and fallback assignments stay identical
 to upstream while both native consumers of `req.config` receive the pricing.
 The fork-owned `initForkedCode` starts the cache warm-up before the server begins
-handling requests:
+handling requests. With margin support enabled, one hourly refresh fetches all
+three LiteLLM endpoints concurrently:
 
 ```
-initForkedCode → LiteLLM GET /model/info  (server-side, authenticated, cached 1h)
-request → applyLiteLLMTokenConfig → req.config.endpoints.custom[LiteLLM].tokenConfig
+initForkedCode → atomic LiteLLM pricing refresh (server-side, authenticated, cached 1h)
+                   ├─ GET /model/info
+                   ├─ GET /config/cost_discount_config (only when explicitly enabled)
+                   └─ GET /config/cost_margin_config (only when explicitly enabled)
+                         ↓ complete { model entries, provider discounts, global margin } snapshot
+request → applyLiteLLMTokenConfig → effective req.config.endpoints.custom[LiteLLM].tokenConfig
       ├─ resolveTokenConfigMap  → GET /api/endpoints/token-config → client context gauge
-      └─ initializeCustom       → endpointTokenConfig → computeUsageCostUSD → metadata.usage.cost
+      └─ initializeCustom       → endpointTokenConfig (effective LiteLLM rates) → computeUsageCostUSD → metadata.usage.cost
 ```
 
 Conversion (LiteLLM per-token → LibreChat per-1M `tokenConfig`):
 
 | LiteLLM `model_info` | LibreChat |
 |---|---|
-| `input_cost_per_token × 1e6` | `prompt` |
-| `output_cost_per_token × 1e6` | `completion` |
-| `cache_read_input_token_cost × 1e6` | `cacheRead` (optional) |
-| `cache_creation_input_token_cost × 1e6` | `cacheWrite` (optional) |
-| `max_input_tokens` ?? `max_tokens` | `context` |
+| `input_cost_per_token × (1 - provider discount) × (1 + global margin) × 1e6` | `prompt` |
+| `output_cost_per_token × (1 - provider discount) × (1 + global margin) × 1e6` | `completion` |
+| `cache_read_input_token_cost × (1 - provider discount) × (1 + global margin) × 1e6` | `cacheRead` (optional) |
+| `cache_creation_input_token_cost × (1 - provider discount) × (1 + global margin) × 1e6` | `cacheWrite` (optional) |
+| `max_input_tokens` or `max_tokens` | `context` (unchanged) |
+
+For example, a `0.10` provider discount followed by a `0.17` global margin
+multiplies each supported price by `0.90 × 1.17`. It changes `$3.00/$15.00`
+input/output rates to `$3.159/$15.795` per million tokens. LiteLLM remains the
+source of truth for both adjustments.
 
 Rules the module enforces:
 
 - An explicit `0` is a real (free) rate; missing / null / non-numeric / `NaN` /
   infinite / negative is **absent**, never coerced to `0`.
+- The global margin accepts `{"global": 0.17}` and
+  `{"global": {"percentage": 0.17}}`. A zero-only fixed margin also means zero.
+  Malformed, negative, or non-finite percentages fail the whole refresh.
+- An empty `values` object fails the refresh because LiteLLM also returns it when
+  a config read fails. This preserves static fallback prices on a cold cache and
+  the last-known-good snapshot later. Use an explicit `{"global": 0}` to publish
+  base prices or clear a live margin without restarting LibreChat.
+- Provider discounts must be finite numbers from `0` through `1`. The bridge
+  matches them to LiteLLM's exact provider identifier and applies the discount
+  before the global margin, matching LiteLLM's cost calculator. An active
+  discount requires every model entry to identify its provider; otherwise the
+  whole refresh fails instead of mixing discounted and undiscounted prices.
+- An empty discount response means no configured discounts on a cold cache. If
+  active discounts are already cached, the same response is treated as an
+  ambiguous failed refresh because LiteLLM also returns it on a config-read
+  error. Set each previously active provider explicitly to `0` to clear it.
+- Provider-specific margins override the global margin in LiteLLM. The bridge
+  rejects snapshots containing a non-`global` margin key instead of applying an
+  incorrect global multiplier.
+- Pricing adjustments are off unless `LITELLM_COST_MARGIN_ENABLED=true`. Unset,
+  `false`, and every other value skip both cost-settings requests and use base
+  `/model/info` prices.
 - An entry is emitted only with finite input **and** output prices **and** a
   positive context. Otherwise the existing static `tokenConfig` entry stands.
-- Dynamic fields override matching static fields. Optional static cache rates
-  remain when LiteLLM omits them, so partial metadata cannot change cache billing.
+- Dynamic fields override matching static fields. If LiteLLM omits an optional
+  cache rate, the bridge treats its static fallback as a base rate and applies
+  the same provider discount and global margin as the model's other rates.
 - Public `model_name` aliases are preserved verbatim and win; the underlying
   `litellm_params.model` is also keyed so a provider reporting the real model
   still resolves. No fuzzy or substring matching.
@@ -195,12 +228,14 @@ Rules the module enforces:
   `endpoints.custom`, the LiteLLM endpoint and its `tokenConfig` are cloned.
 
 **Failure behavior.** Nothing about this can block chat, startup, or
-`/api/endpoints/token-config`. `modelInfoCache.js` is stale-while-revalidate: an
-expired cache is served immediately and refreshed in the background. A cold cache
-also starts the fetch in the background and returns no dynamic entries, leaving
-the static config untouched until the warm-up finishes. The fetch has a 5s
-timeout, failed refreshes keep the last-known-good entries, and in-flight requests
-are deduped.
+`/api/endpoints/token-config`. `modelInfoCache.js` is stale-while-revalidate. An
+expired snapshot is served immediately while one background refresh runs. With
+margin support enabled, the cache replaces the model entries, provider
+discounts, and margin together only after all three responses succeed and
+validate. A cold failure leaves static config untouched. A later failure keeps
+the complete last-known-good adjusted snapshot. An empty margin response follows
+this failure path even on a cold cache. All requests use the same server-side
+authorization and 5s timeout. Concurrent callers share one in-flight refresh.
 
 A failure then opens a **60s backoff** (`FAILURE_BACKOFF_MS`) during which LiteLLM
 is not called at all. Without it a cold cache would start another fetch after each
@@ -209,21 +244,27 @@ The backoff also bounds the warning to one log line per window. With nothing
 cached, `applyLiteLLMTokenConfig` returns the **same** config object untouched —
 never zero-cost entries, never a thrown error.
 
-**Known limitation.** LibreChat's custom `tokenConfig` is flat. LiteLLM's
-long-context / tiered pricing (`input_cost_per_token_above_128k_tokens`), and its
-per-request, per-image, per-audio-token and per-second rates cannot be expressed
-by it, so a long-context request is priced at the base rate. Extending upstream's
-pricing schema is deliberately out of scope. Costs are approximate for that
-reason — LiteLLM's own per-request cost is not available in the streaming
-response, and the fork does **not** query spend logs per response.
+**Known limitation.** LibreChat's custom `tokenConfig` is flat. A positive
+`fixed_amount` cannot be represented, so the bridge rejects that refresh instead
+of publishing a misleading price. The bridge supports only LiteLLM's global
+percentage margin and rejects provider-specific margin configurations. Tiered
+and long-context pricing, image rates, audio-token rates, time-based rates, and
+other per-request charges also cannot be represented. Costs remain approximate
+for these cases. The fork does not query LiteLLM spend logs per response or
+extend upstream's pricing schema.
 
 **Deployment.** Requires `interface.contextCost: true` in `librechat.yaml`
 (currency left unset ⇒ USD) and `LITELLM_API_KEY` (+ optional `LITELLM_BASE_URL`)
 in the environment. `librechat.yaml` is gitignored — it is deployment config, not
-repo state. A manually maintained static `tokenConfig` block under the LiteLLM
-endpoint still works and acts as a per-model fallback; remove it only once the
-dynamic bridge is validated against the full configured model list, as a separate
-step.
+repo state. LiteLLM's `cost_discount_config` and `cost_margin_config` remain
+authoritative; LibreChat has no duplicate adjustment values. Set
+`LITELLM_COST_MARGIN_ENABLED=true` and restart LibreChat to enable both discounts
+and margins. The setting is opt-in because LiteLLM's cost-settings endpoints
+require a database-backed proxy. Leaving the variable unset or setting it to
+`false` preserves base-price fetching from `/model/info`. A manually maintained
+static `tokenConfig` block under the LiteLLM endpoint still works as a per-model
+fallback. Remove it only after validating the dynamic bridge against the full
+model list.
 
 ### Request Flow for Custom Endpoints (LiteLLM)
 
@@ -233,7 +274,7 @@ All chat requests go through `/api/agents/chat/:endpoint` (the `/:endpoint` rout
 Frontend → POST /api/agents/chat/LiteLLM
   → configMiddleware → getAppConfig → applyLiteLLMTokenConfig → req.config
     → ResumableAgentController (api/server/controllers/agents/request.js)
-      → initializeClient → initializeCustom → endpointTokenConfig (LiteLLM rates)
+      → initializeClient → initializeCustom → endpointTokenConfig (effective LiteLLM rates)
       → creates AgentClient, collectedUsage[], ModelEndHandler
       → client.sendMessage()
         → sendCompletion() → LangChain ChatOpenAI → OpenAI SDK → LiteLLM proxy → LLM provider
@@ -259,7 +300,7 @@ Frontend → POST /api/agents/chat/LiteLLM
 
 **Backend:**
 - `api/server/forked-code/litellm/tokenConfig.js` — the pricing bridge (`applyLiteLLMTokenConfig`)
-- `api/server/forked-code/litellm/modelInfoCache.js` — non-blocking authenticated `/model/info` warm-up + 1h stale-while-revalidate cache (5s timeout, inflight dedup, last-known-good). The only LiteLLM fetch in the codebase; the API key never leaves the server.
+- `api/server/forked-code/litellm/modelInfoCache.js` — one non-blocking authenticated refresh for `/model/info` and, when enabled, the discount and margin config endpoints, with a 1h atomic stale-while-revalidate snapshot, 5s timeout, in-flight deduplication, and last-known-good fallback. The API key never leaves the server.
 - `api/server/forked-code/agents/applyLiteLLMStreamUsage.js` — streamed-usage opt-in
 - `api/server/forked-code/agents/preserveLiteLLMUsage.js` — raw usage normalization
 

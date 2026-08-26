@@ -47,27 +47,38 @@ const runMiddleware = async (req = { user: { id: 'u1' }, path: '/x' }) => {
  */
 describe('LiteLLM token-config bridge (integration)', () => {
   const originalApiKey = process.env.LITELLM_API_KEY;
+  const originalCostMarginEnabled = process.env.LITELLM_COST_MARGIN_ENABLED;
 
   beforeEach(() => {
     resetLiteLLMModelCache();
     process.env.LITELLM_API_KEY = 'test-key';
+    process.env.LITELLM_COST_MARGIN_ENABLED = 'true';
     axios.get.mockReset();
-    axios.get.mockResolvedValue({
-      data: {
-        data: [
-          {
-            model_name: 'gpt-4.1',
-            litellm_params: { model: 'azure/gpt-4.1' },
-            model_info: {
-              input_cost_per_token: 0.000002,
-              output_cost_per_token: 0.000008,
-              cache_read_input_token_cost: 0.0000005,
-              cache_creation_input_token_cost: 0.0000025,
-              max_input_tokens: 1047576,
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/config/cost_discount_config')) {
+        return Promise.resolve({ data: { values: { azure: 0.1 } } });
+      }
+      if (url.endsWith('/config/cost_margin_config')) {
+        return Promise.resolve({ data: { values: { global: 0.17 } } });
+      }
+      return Promise.resolve({
+        data: {
+          data: [
+            {
+              model_name: 'gpt-4.1',
+              litellm_params: { model: 'azure/gpt-4.1' },
+              model_info: {
+                litellm_provider: 'azure',
+                input_cost_per_token: 0.000002,
+                output_cost_per_token: 0.000008,
+                cache_read_input_token_cost: 0.0000005,
+                cache_creation_input_token_cost: 0.0000025,
+                max_input_tokens: 1047576,
+              },
             },
-          },
-        ],
-      },
+          ],
+        },
+      });
     });
     getAppConfig.mockReset();
     getAppConfig.mockResolvedValue(baseAppConfig());
@@ -79,18 +90,22 @@ describe('LiteLLM token-config bridge (integration)', () => {
     } else {
       process.env.LITELLM_API_KEY = originalApiKey;
     }
+    if (originalCostMarginEnabled === undefined) {
+      delete process.env.LITELLM_COST_MARGIN_ENABLED;
+    } else {
+      process.env.LITELLM_COST_MARGIN_ENABLED = originalCostMarginEnabled;
+    }
   });
 
   it('injects LiteLLM pricing into req.config on the normal config path', async () => {
     const config = await runMiddleware();
 
-    expect(config.endpoints.custom[0].tokenConfig['gpt-4.1']).toEqual({
-      prompt: 2,
-      completion: 8,
-      context: 1047576,
-      cacheRead: 0.5,
-      cacheWrite: 2.5,
-    });
+    const entry = config.endpoints.custom[0].tokenConfig['gpt-4.1'];
+    expect(entry.prompt).toBeCloseTo(2.106, 12);
+    expect(entry.completion).toBeCloseTo(8.424, 12);
+    expect(entry.cacheRead).toBeCloseTo(0.5265, 12);
+    expect(entry.cacheWrite).toBeCloseTo(2.6325, 12);
+    expect(entry.context).toBe(1047576);
   });
 
   it('injects LiteLLM pricing on the fallback config path', async () => {
@@ -99,7 +114,7 @@ describe('LiteLLM token-config bridge (integration)', () => {
     const config = await runMiddleware({ user: { id: 'u1', tenantId: 't1' }, path: '/x' });
 
     expect(getAppConfig).toHaveBeenCalledTimes(2);
-    expect(config.endpoints.custom[0].tokenConfig['gpt-4.1'].prompt).toBe(2);
+    expect(config.endpoints.custom[0].tokenConfig['gpt-4.1'].prompt).toBeCloseTo(2.106, 12);
   });
 
   it('reaches the native /endpoints/token-config response', async () => {
@@ -114,13 +129,12 @@ describe('LiteLLM token-config bridge (integration)', () => {
       { getValueKey, getMultiplier, getCacheMultiplier },
     );
 
-    expect(tokenConfigMap.LiteLLM['gpt-4.1']).toEqual({
-      context: 1047576,
-      prompt: 2,
-      completion: 8,
-      cacheRead: 0.5,
-      cacheWrite: 2.5,
-    });
+    const entry = tokenConfigMap.LiteLLM['gpt-4.1'];
+    expect(entry.prompt).toBeCloseTo(2.106, 12);
+    expect(entry.completion).toBeCloseTo(8.424, 12);
+    expect(entry.cacheRead).toBeCloseTo(0.5265, 12);
+    expect(entry.cacheWrite).toBeCloseTo(2.6325, 12);
+    expect(entry.context).toBe(1047576);
   });
 
   it('reaches endpointTokenConfig and native server-side cost calculation', async () => {
@@ -133,12 +147,11 @@ describe('LiteLLM token-config bridge (integration)', () => {
       db: { getUserKeyValues: async () => ({}) },
     });
 
-    expect(options.endpointTokenConfig['gpt-4.1']).toMatchObject({
-      prompt: 2,
-      completion: 8,
-      read: 0.5,
-      write: 2.5,
-    });
+    const entry = options.endpointTokenConfig['gpt-4.1'];
+    expect(entry.prompt).toBeCloseTo(2.106, 12);
+    expect(entry.completion).toBeCloseTo(8.424, 12);
+    expect(entry.read).toBeCloseTo(0.5265, 12);
+    expect(entry.write).toBeCloseTo(2.6325, 12);
 
     const cost = computeUsageCostUSD(
       { model: 'gpt-4.1', input_tokens: 1_000_000, output_tokens: 1_000_000 },
@@ -146,7 +159,7 @@ describe('LiteLLM token-config bridge (integration)', () => {
       options.endpointTokenConfig,
     );
 
-    expect(cost).toBeCloseTo(10, 6);
+    expect(cost).toBeCloseTo(10.53, 6);
   });
 
   it('falls back to the static config when LiteLLM is unreachable', async () => {

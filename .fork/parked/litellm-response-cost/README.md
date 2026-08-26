@@ -90,10 +90,11 @@ payload — upstream's native usage rollup and cost calculation depend on both.
    ```
 
 7. `api/syncResponseUsage.js` imported `getLiteLLMModelInfoMap` from
-   `api/server/forked-code/litellm/modelInfoCache.js`. That export is gone — the
-   cache now returns a normalized **entry list** via `getLiteLLMModelEntries()`.
-   Either rebuild the `model -> model_info` map from those entries or restore the
-   old export; do **not** add a second LiteLLM fetch.
+   `api/server/forked-code/litellm/modelInfoCache.js`. That export is gone. The
+   cache now returns an atomic snapshot via `getLiteLLMPricingSnapshot()`.
+   Handle a possible `null` cold-cache result, then rebuild the
+   `model -> model_info` map from `snapshot.entries`, or restore the old export.
+   Do **not** add a second LiteLLM fetch.
 8. Verify: `bash .fork/verify-sentinels.sh`, `cd api && npx jest forked-code`,
    `npx eslint api/server/forked-code client/src/forked-code-custom`. Note that
    `responseCostRemoved.spec.js` is designed to fail once the feature is active —

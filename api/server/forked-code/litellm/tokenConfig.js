@@ -1,14 +1,17 @@
 const { logger } = require('@librechat/data-schemas');
 const { EModelEndpoint } = require('librechat-data-provider');
-const { getLiteLLMModelEntries } = require('./modelInfoCache');
+const { getLiteLLMPricingSnapshot } = require('./modelInfoCache');
 
 /** The only custom endpoint this bridge touches, matched case-insensitively. */
 const LITELLM_ENDPOINT_NAME = 'litellm';
 const PER_MILLION = 1_000_000;
 const MAX_LOGGED_CONFLICTS = 5;
+const CACHE_RATE_KEYS = ['cacheRead', 'cacheWrite'];
 
-let cachedEntries = null;
-let cachedDynamicTokenConfig = null;
+let cachedSnapshot = null;
+let cachedDynamicPricing = null;
+
+const isValidRate = (value) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
 /**
  * LiteLLM prices per token; LibreChat's `tokenConfig` prices per million.
@@ -16,11 +19,11 @@ let cachedDynamicTokenConfig = null;
  * infinite, or negative is absent — never coerced to zero.
  * @returns {number | null}
  */
-const toRatePerMillion = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+const toRatePerMillion = (value, priceMultiplier) => {
+  if (!isValidRate(value)) {
     return null;
   }
-  return value * PER_MILLION;
+  return value * priceMultiplier * PER_MILLION;
 };
 
 /** `max_input_tokens`, falling back to `max_tokens`. Must be positive. */
@@ -38,9 +41,9 @@ const toContext = (modelInfo) => {
  * complete one (finite input + output prices and a positive context window).
  * Cache rates are optional and omitted when unavailable.
  */
-const toTokenConfigEntry = (modelInfo) => {
-  const prompt = toRatePerMillion(modelInfo.input_cost_per_token);
-  const completion = toRatePerMillion(modelInfo.output_cost_per_token);
+const toTokenConfigEntry = (modelInfo, priceMultiplier) => {
+  const prompt = toRatePerMillion(modelInfo.input_cost_per_token, priceMultiplier);
+  const completion = toRatePerMillion(modelInfo.output_cost_per_token, priceMultiplier);
   const context = toContext(modelInfo);
 
   if (prompt == null || completion == null || context == null) {
@@ -49,11 +52,11 @@ const toTokenConfigEntry = (modelInfo) => {
 
   const entry = { prompt, completion, context };
 
-  const cacheRead = toRatePerMillion(modelInfo.cache_read_input_token_cost);
+  const cacheRead = toRatePerMillion(modelInfo.cache_read_input_token_cost, priceMultiplier);
   if (cacheRead != null) {
     entry.cacheRead = cacheRead;
   }
-  const cacheWrite = toRatePerMillion(modelInfo.cache_creation_input_token_cost);
+  const cacheWrite = toRatePerMillion(modelInfo.cache_creation_input_token_cost, priceMultiplier);
   if (cacheWrite != null) {
     entry.cacheWrite = cacheWrite;
   }
@@ -68,9 +71,12 @@ const isSameEntry = (a, b) =>
   a.cacheRead === b.cacheRead &&
   a.cacheWrite === b.cacheWrite;
 
+const isSamePricedEntry = (a, b) =>
+  a.priceMultiplier === b.priceMultiplier && isSameEntry(a.tokenConfigEntry, b.tokenConfigEntry);
+
 /**
- * Collects `key -> entry`, dropping any key whose duplicates disagree so the
- * static fallback stays in charge for it rather than silently last-write-wins.
+ * Collects `key -> priced entry`, dropping any key whose duplicates disagree
+ * so the static fallback stays in charge rather than silently last-write-wins.
  *
  * A conflicted key is remembered for the whole pass: deleting it from the map
  * alone would let a third occurrence look unseen and re-insert itself, quietly
@@ -80,16 +86,16 @@ const collectByKey = (pairs) => {
   const byModel = new Map();
   const conflicted = new Set();
 
-  for (const [key, entry] of pairs) {
+  for (const [key, pricedEntry] of pairs) {
     if (conflicted.has(key)) {
       continue;
     }
     const existing = byModel.get(key);
     if (existing == null) {
-      byModel.set(key, entry);
+      byModel.set(key, pricedEntry);
       continue;
     }
-    if (!isSameEntry(existing, entry)) {
+    if (!isSamePricedEntry(existing, pricedEntry)) {
       byModel.delete(key);
       conflicted.add(key);
     }
@@ -99,25 +105,32 @@ const collectByKey = (pairs) => {
 };
 
 /**
- * Builds the dynamic `tokenConfig` fragment. Public `model_name` aliases are
- * preserved verbatim and win; the underlying `litellm_params.model` is also
- * keyed so a provider that reports the real model instead of the alias still
- * resolves. No fuzzy or substring matching.
+ * Builds dynamic entries with the multiplier needed to adjust static cache
+ * fallbacks. Public `model_name` aliases are preserved verbatim and win; the
+ * underlying `litellm_params.model` is also keyed so a provider that reports
+ * the real model instead of the alias still resolves. No fuzzy or substring
+ * matching.
  */
-const buildDynamicTokenConfig = (entries) => {
+const buildDynamicPricing = ({ entries, providerDiscounts, globalMargin }) => {
   const aliasPairs = [];
   const underlyingPairs = [];
 
-  for (const { modelName, litellmModel, modelInfo } of entries) {
-    const entry = toTokenConfigEntry(modelInfo);
-    if (entry == null) {
+  for (const { modelName, litellmModel, provider, modelInfo } of entries) {
+    const discount =
+      provider != null && Object.hasOwn(providerDiscounts, provider)
+        ? providerDiscounts[provider]
+        : 0;
+    const priceMultiplier = (1 - discount) * (1 + globalMargin);
+    const tokenConfigEntry = toTokenConfigEntry(modelInfo, priceMultiplier);
+    if (tokenConfigEntry == null) {
       continue;
     }
+    const pricedEntry = { tokenConfigEntry, priceMultiplier };
     if (modelName) {
-      aliasPairs.push([modelName, entry]);
+      aliasPairs.push([modelName, pricedEntry]);
     }
     if (litellmModel) {
-      underlyingPairs.push([litellmModel, entry]);
+      underlyingPairs.push([litellmModel, pricedEntry]);
     }
   }
 
@@ -140,15 +153,15 @@ const buildDynamicTokenConfig = (entries) => {
   return { ...safeUnderlyingEntries, ...alias.entries };
 };
 
-const getDynamicTokenConfig = (entries) => {
-  if (entries === cachedEntries && cachedDynamicTokenConfig != null) {
-    return cachedDynamicTokenConfig;
+const getDynamicPricing = (snapshot) => {
+  if (snapshot === cachedSnapshot && cachedDynamicPricing != null) {
+    return cachedDynamicPricing;
   }
 
-  const dynamicTokenConfig = buildDynamicTokenConfig(entries);
-  cachedEntries = entries;
-  cachedDynamicTokenConfig = dynamicTokenConfig;
-  return dynamicTokenConfig;
+  const dynamicPricing = buildDynamicPricing(snapshot);
+  cachedSnapshot = snapshot;
+  cachedDynamicPricing = dynamicPricing;
+  return dynamicPricing;
 };
 
 const findLiteLLMEndpointIndex = (customEndpoints) =>
@@ -158,27 +171,35 @@ const findLiteLLMEndpointIndex = (customEndpoints) =>
       endpoint.name.trim().toLowerCase() === LITELLM_ENDPOINT_NAME,
   );
 
-function mergeTokenConfig(staticTokenConfig = {}, dynamicTokenConfig) {
+function mergeTokenConfig(staticTokenConfig = {}, dynamicPricing) {
   const mergedTokenConfig = { ...staticTokenConfig };
-  for (const [model, dynamicEntry] of Object.entries(dynamicTokenConfig)) {
-    mergedTokenConfig[model] = { ...(staticTokenConfig[model] ?? {}), ...dynamicEntry };
+  for (const [model, { tokenConfigEntry, priceMultiplier }] of Object.entries(dynamicPricing)) {
+    const adjustedStaticEntry = { ...(staticTokenConfig[model] ?? {}) };
+    for (const field of CACHE_RATE_KEYS) {
+      const staticRate = adjustedStaticEntry[field];
+      if (!Object.hasOwn(tokenConfigEntry, field) && isValidRate(staticRate)) {
+        adjustedStaticEntry[field] = staticRate * priceMultiplier;
+      }
+    }
+    mergedTokenConfig[model] = { ...adjustedStaticEntry, ...tokenConfigEntry };
   }
   return mergedTokenConfig;
 }
 
 /**
- * Makes LiteLLM `/model/info` the runtime source of the flat prices and context
- * limits LibreChat's native context-cost pipeline reads — `/api/endpoints/token-config`
- * for the client gauge, and `endpointTokenConfig` for server-side cost calculation.
- * Both resolve from `req.config`, so this one call at the config middleware feeds both.
+ * Makes LiteLLM model info, provider discounts, and the global margin the runtime
+ * source of the flat prices and context limits LibreChat's native context-cost
+ * pipeline reads. Provider discounts apply before the global percentage margin;
+ * context limits remain unchanged.
  *
  * Returns a request-scoped config: the shared cached object is never mutated, and
  * only the levels that change (root, `endpoints`, `endpoints.custom`, the LiteLLM
  * endpoint, its `tokenConfig`) are cloned. Dynamic fields override matching static
- * fields while optional static fields absent from LiteLLM are preserved. Models
- * LiteLLM does not describe completely keep their static entry. When LiteLLM is
- * unavailable and nothing is cached, the input config is returned untouched —
- * never zero-cost entries, and never a thrown error.
+ * fields while optional static cache rates absent from LiteLLM receive the same
+ * discount and margin multiplier. Models LiteLLM does not describe completely
+ * keep their static entry. When LiteLLM is unavailable and nothing is cached,
+ * the input config is returned untouched — never zero-cost entries, and never a
+ * thrown error.
  *
  * Known limitation: LiteLLM's long-context / tiered, per-request, image, audio and
  * time-based pricing cannot be represented by LibreChat's flat `tokenConfig`; only
@@ -199,8 +220,13 @@ async function applyLiteLLMTokenConfig(appConfig) {
       return appConfig;
     }
 
-    const dynamicTokenConfig = getDynamicTokenConfig(await getLiteLLMModelEntries());
-    if (Object.keys(dynamicTokenConfig).length === 0) {
+    const snapshot = await getLiteLLMPricingSnapshot();
+    if (snapshot == null) {
+      return appConfig;
+    }
+
+    const dynamicPricing = getDynamicPricing(snapshot);
+    if (Object.keys(dynamicPricing).length === 0) {
       return appConfig;
     }
 
@@ -208,7 +234,7 @@ async function applyLiteLLMTokenConfig(appConfig) {
     const nextCustomEndpoints = customEndpoints.slice();
     nextCustomEndpoints[index] = {
       ...litellmEndpoint,
-      tokenConfig: mergeTokenConfig(litellmEndpoint.tokenConfig, dynamicTokenConfig),
+      tokenConfig: mergeTokenConfig(litellmEndpoint.tokenConfig, dynamicPricing),
     };
 
     return {

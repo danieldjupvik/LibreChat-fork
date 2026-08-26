@@ -19,8 +19,29 @@ const completeInfo = (overrides = {}) => ({
   ...overrides,
 });
 
-const respondWith = (models) => {
-  axios.get.mockResolvedValue({ data: { data: models } });
+const respondWith = (models, marginValues = { global: 0 }, discountValues = {}) => {
+  axios.get.mockImplementation((url) => {
+    if (url.endsWith('/model/info')) {
+      return Promise.resolve({ data: { data: models } });
+    }
+    if (url.endsWith('/config/cost_discount_config')) {
+      return Promise.resolve({ data: { values: discountValues } });
+    }
+    if (url.endsWith('/config/cost_margin_config')) {
+      return Promise.resolve({ data: { values: marginValues } });
+    }
+    return Promise.reject(new Error(`Unexpected LiteLLM URL: ${url}`));
+  });
+};
+
+const resolverKeyFor = (url) => {
+  if (url.endsWith('/model/info')) {
+    return 'models';
+  }
+  if (url.endsWith('/config/cost_discount_config')) {
+    return 'discounts';
+  }
+  return 'margin';
 };
 
 const appConfigWith = (customEndpoints) => ({
@@ -43,10 +64,12 @@ const tokenConfigFor = async (litellmEndpoint) =>
 
 describe('applyLiteLLMTokenConfig', () => {
   const originalApiKey = process.env.LITELLM_API_KEY;
+  const originalCostMarginEnabled = process.env.LITELLM_COST_MARGIN_ENABLED;
 
   beforeEach(() => {
     resetLiteLLMModelCache();
     process.env.LITELLM_API_KEY = 'test-key';
+    process.env.LITELLM_COST_MARGIN_ENABLED = 'true';
     axios.get.mockReset();
   });
 
@@ -55,6 +78,11 @@ describe('applyLiteLLMTokenConfig', () => {
       delete process.env.LITELLM_API_KEY;
     } else {
       process.env.LITELLM_API_KEY = originalApiKey;
+    }
+    if (originalCostMarginEnabled === undefined) {
+      delete process.env.LITELLM_COST_MARGIN_ENABLED;
+    } else {
+      process.env.LITELLM_COST_MARGIN_ENABLED = originalCostMarginEnabled;
     }
   });
 
@@ -114,6 +142,224 @@ describe('applyLiteLLMTokenConfig', () => {
     });
   });
 
+  it('requests one authenticated pricing triplet with the same timeout', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], { global: 0.17 });
+
+    await runBridge();
+
+    expect(axios.get).toHaveBeenCalledTimes(3);
+    expect(axios.get.mock.calls.map(([url]) => url)).toEqual([
+      'https://litellm.danieldjupvik.com/model/info',
+      'https://litellm.danieldjupvik.com/config/cost_discount_config',
+      'https://litellm.danieldjupvik.com/config/cost_margin_config',
+    ]);
+    const [, modelRequest] = axios.get.mock.calls[0];
+    const [, discountRequest] = axios.get.mock.calls[1];
+    const [, marginRequest] = axios.get.mock.calls[2];
+    expect(modelRequest).toBe(discountRequest);
+    expect(modelRequest).toBe(marginRequest);
+    expect(modelRequest).toEqual({
+      headers: {
+        Authorization: 'Bearer test-key',
+        'Content-Type': 'application/json',
+      },
+      timeout: 5000,
+    });
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['false', ' FALSE '],
+  ])(
+    'uses base prices and skips the cost settings endpoints when the feature is %s',
+    async (_label, value) => {
+      if (value === undefined) {
+        delete process.env.LITELLM_COST_MARGIN_ENABLED;
+      } else {
+        process.env.LITELLM_COST_MARGIN_ENABLED = value;
+      }
+      respondWith([modelEntry('gpt-4.1', completeInfo())], { global: 0.17 });
+
+      expect((await tokenConfigFor())['gpt-4.1']).toEqual({
+        prompt: 3,
+        completion: 15,
+        context: 200000,
+      });
+      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledWith(
+        'https://litellm.danieldjupvik.com/model/info',
+        expect.objectContaining({ timeout: 5000 }),
+      );
+    },
+  );
+
+  it('applies the global percentage to every price but not the context limit', async () => {
+    respondWith(
+      [
+        modelEntry(
+          'claude-sonnet-4',
+          completeInfo({
+            cache_read_input_token_cost: 0.0000003,
+            cache_creation_input_token_cost: 0.00000375,
+          }),
+        ),
+      ],
+      { global: 0.17 },
+    );
+
+    const entry = (await tokenConfigFor())['claude-sonnet-4'];
+
+    expect(entry.prompt).toBeCloseTo(3.51, 12);
+    expect(entry.completion).toBeCloseTo(17.55, 12);
+    expect(entry.cacheRead).toBeCloseTo(0.351, 12);
+    expect(entry.cacheWrite).toBeCloseTo(4.3875, 12);
+    expect(entry.context).toBe(200000);
+  });
+
+  it('applies the provider discount before the global margin', async () => {
+    respondWith(
+      [
+        modelEntry(
+          'gpt-4.1',
+          completeInfo({
+            litellm_provider: 'openai',
+            cache_read_input_token_cost: 0.0000003,
+            cache_creation_input_token_cost: 0.00000375,
+          }),
+        ),
+      ],
+      { global: 0.17 },
+      { openai: 0.1 },
+    );
+
+    const entry = (await tokenConfigFor())['gpt-4.1'];
+
+    expect(entry.prompt).toBeCloseTo(3.159, 12);
+    expect(entry.completion).toBeCloseTo(15.795, 12);
+    expect(entry.cacheRead).toBeCloseTo(0.3159, 12);
+    expect(entry.cacheWrite).toBeCloseTo(3.94875, 12);
+    expect(entry.context).toBe(200000);
+  });
+
+  it('does not apply a discount configured for another provider', async () => {
+    respondWith(
+      [modelEntry('gpt-4.1', completeInfo({ litellm_provider: 'openai' }))],
+      { global: 0.17 },
+      { anthropic: 0.1 },
+    );
+
+    expect((await tokenConfigFor())['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+  });
+
+  it('keeps the static fallback when an active discount lacks model provider data', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], { global: 0.17 }, { openai: 0.1 });
+    const appConfig = appConfigWith([
+      { name: 'LiteLLM', tokenConfig: { 'gpt-4.1': { prompt: 5, completion: 10, context: 8000 } } },
+    ]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
+  it.each([
+    ['non-numeric', '0.1'],
+    ['NaN', NaN],
+    ['infinite', Infinity],
+    ['negative', -0.1],
+    ['over 100%', 1.1],
+  ])('keeps the static fallback when a provider discount is %s', async (_label, discount) => {
+    respondWith(
+      [modelEntry('gpt-4.1', completeInfo({ litellm_provider: 'openai' }))],
+      { global: 0.17 },
+      { openai: discount },
+    );
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
+  it('accepts the global percentage object form', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {
+      global: { percentage: 0.17 },
+    });
+
+    expect((await tokenConfigFor())['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+  });
+
+  it('keeps the static fallback when a cold margin response is empty', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {});
+    const appConfig = appConfigWith([
+      { name: 'LiteLLM', tokenConfig: { 'gpt-4.1': { prompt: 5, completion: 10, context: 8000 } } },
+    ]);
+
+    await warmLiteLLMModelCache();
+
+    const result = await applyLiteLLMTokenConfig(appConfig);
+
+    expect(result).toBe(appConfig);
+    expect(litellmTokenConfig(result)['gpt-4.1']).toEqual({
+      prompt: 5,
+      completion: 10,
+      context: 8000,
+    });
+  });
+
+  it('accepts a zero-only fixed margin as zero margin', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {
+      global: { fixed_amount: 0 },
+    });
+
+    expect((await tokenConfigFor())['gpt-4.1']).toEqual({
+      prompt: 3,
+      completion: 15,
+      context: 200000,
+    });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['null', null],
+    ['non-numeric', '0.17'],
+    ['NaN', NaN],
+    ['infinite', Infinity],
+    ['negative', -0.17],
+    ['empty object', {}],
+    ['malformed object', { percentage: '0.17' }],
+  ])('does not inject base prices when the global margin is %s', async (_label, margin) => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], { global: margin });
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
+  it('does not inject token prices for a positive fixed margin', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {
+      global: { percentage: 0.17, fixed_amount: 0.001 },
+    });
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
+  it('does not inject token prices when a provider-specific margin overrides global', async () => {
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {
+      global: 0.17,
+      openai: 0.1,
+    });
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
   it('omits cache rates that LiteLLM does not report', async () => {
     respondWith([
       modelEntry(
@@ -148,14 +394,27 @@ describe('applyLiteLLMTokenConfig', () => {
   });
 
   it('treats an explicit zero price as a real free rate', async () => {
-    respondWith([
-      modelEntry('free-model', completeInfo({ input_cost_per_token: 0, output_cost_per_token: 0 })),
-    ]);
+    respondWith(
+      [
+        modelEntry(
+          'free-model',
+          completeInfo({
+            input_cost_per_token: 0,
+            output_cost_per_token: 0,
+            cache_read_input_token_cost: 0,
+            cache_creation_input_token_cost: 0,
+          }),
+        ),
+      ],
+      { global: 0.17 },
+    );
 
     expect((await tokenConfigFor())['free-model']).toEqual({
       prompt: 0,
       completion: 0,
       context: 200000,
+      cacheRead: 0,
+      cacheWrite: 0,
     });
   });
 
@@ -193,8 +452,12 @@ describe('applyLiteLLMTokenConfig', () => {
     expect(tokenConfig['gpt-4.1']).toEqual({ prompt: 3, completion: 15, context: 200000 });
   });
 
-  it('keeps static cache rates when LiteLLM does not report them', async () => {
-    respondWith([modelEntry('gpt-4.1', completeInfo())]);
+  it('adjusts static cache rates when LiteLLM does not report them', async () => {
+    respondWith(
+      [modelEntry('gpt-4.1', completeInfo({ litellm_provider: 'openai' }))],
+      { global: 0.17 },
+      { openai: 0.1 },
+    );
 
     const tokenConfig = await tokenConfigFor({
       name: 'LiteLLM',
@@ -209,13 +472,12 @@ describe('applyLiteLLMTokenConfig', () => {
       },
     });
 
-    expect(tokenConfig['gpt-4.1']).toEqual({
-      prompt: 3,
-      completion: 15,
-      context: 200000,
-      cacheRead: 0.5,
-      cacheWrite: 3.75,
-    });
+    const entry = tokenConfig['gpt-4.1'];
+    expect(entry.prompt).toBeCloseTo(3.159, 12);
+    expect(entry.completion).toBeCloseTo(15.795, 12);
+    expect(entry.cacheRead).toBeCloseTo(0.5265, 12);
+    expect(entry.cacheWrite).toBeCloseTo(3.94875, 12);
+    expect(entry.context).toBe(200000);
   });
 
   it('keeps static entries LiteLLM does not describe completely', async () => {
@@ -320,11 +582,11 @@ describe('applyLiteLLMTokenConfig', () => {
   });
 
   it('returns static config without waiting for a cold LiteLLM request', async () => {
-    let resolveRequest;
+    const resolvers = {};
     axios.get.mockImplementation(
-      () =>
+      (url) =>
         new Promise((resolve) => {
-          resolveRequest = resolve;
+          resolvers[resolverKeyFor(url)] = resolve;
         }),
     );
     const appConfig = appConfigWith([
@@ -337,29 +599,135 @@ describe('applyLiteLLMTokenConfig', () => {
       new Promise((resolve) => setImmediate(() => resolve({ status: 'pending' }))),
     ]);
 
-    resolveRequest({ data: { data: [modelEntry('gpt-4.1', completeInfo())] } });
+    resolvers.models({ data: { data: [modelEntry('gpt-4.1', completeInfo())] } });
+    resolvers.discounts({ data: { values: {} } });
+    resolvers.margin({ data: { values: { global: 0.17 } } });
     await warmLiteLLMModelCache();
 
     expect(outcome).toEqual({ status: 'resolved', result: appConfig });
   });
 
-  it('serves the last-known-good cache after a later fetch fails', async () => {
-    respondWith([modelEntry('gpt-4.1', completeInfo())]);
-    await runBridge();
+  it('shares one in-flight request triplet across concurrent cold calls', async () => {
+    const resolvers = {};
+    axios.get.mockImplementation(
+      (url) =>
+        new Promise((resolve) => {
+          resolvers[resolverKeyFor(url)] = resolve;
+        }),
+    );
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
 
-    axios.get.mockRejectedValue(new Error('ECONNREFUSED'));
-    const tokenConfig = await tokenConfigFor();
+    const [first, second] = await Promise.all([
+      applyLiteLLMTokenConfig(appConfig),
+      applyLiteLLMTokenConfig(appConfig),
+    ]);
 
-    expect(tokenConfig['gpt-4.1']).toEqual({ prompt: 3, completion: 15, context: 200000 });
+    expect(first).toBe(appConfig);
+    expect(second).toBe(appConfig);
+    expect(axios.get).toHaveBeenCalledTimes(3);
+
+    resolvers.models({ data: { data: [modelEntry('gpt-4.1', completeInfo())] } });
+    resolvers.discounts({ data: { values: {} } });
+    resolvers.margin({ data: { values: { global: 0.17 } } });
+    await warmLiteLLMModelCache();
   });
 
-  it('fetches LiteLLM at most once across repeated calls', async () => {
+  it('keeps the marked-up last-known-good snapshot when a later margin fetch fails', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    respondWith([modelEntry('gpt-4.1', completeInfo())], { global: 0.17 });
+    await runBridge();
+
+    now.mockReturnValue(1_000 + 60 * 60 * 1000 + 1);
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/model/info')) {
+        return Promise.resolve({ data: { data: [modelEntry('gpt-4.1', completeInfo())] } });
+      }
+      return Promise.reject(new Error('margin unavailable'));
+    });
+    const staleTokenConfig = await tokenConfigFor();
+    await new Promise((resolve) => setImmediate(resolve));
+    const tokenConfig = await tokenConfigFor();
+
+    expect(staleTokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+    expect(tokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+    expect(axios.get).toHaveBeenCalledTimes(6);
+    now.mockRestore();
+  });
+
+  it('keeps a nonzero last-known-good margin when a later response is empty', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    respondWith([modelEntry('gpt-4.1', completeInfo())], { global: 0.17 });
+    await runBridge();
+
+    now.mockReturnValue(1_000 + 60 * 60 * 1000 + 1);
+    respondWith([modelEntry('gpt-4.1', completeInfo())], {});
+    const staleTokenConfig = await tokenConfigFor();
+    await new Promise((resolve) => setImmediate(resolve));
+    const tokenConfig = await tokenConfigFor();
+
+    expect(staleTokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+    expect(tokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+    expect(axios.get).toHaveBeenCalledTimes(6);
+    now.mockRestore();
+  });
+
+  it('keeps an active last-known-good discount when a later response is empty', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const models = [modelEntry('gpt-4.1', completeInfo({ litellm_provider: 'openai' }))];
+    respondWith(models, { global: 0.17 }, { openai: 0.1 });
+    await runBridge();
+
+    now.mockReturnValue(1_000 + 60 * 60 * 1000 + 1);
+    respondWith(models, { global: 0.17 }, {});
+    const staleTokenConfig = await tokenConfigFor();
+    await new Promise((resolve) => setImmediate(resolve));
+    const tokenConfig = await tokenConfigFor();
+
+    expect(staleTokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.159, 12);
+    expect(tokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.159, 12);
+    expect(axios.get).toHaveBeenCalledTimes(6);
+    now.mockRestore();
+  });
+
+  it('clears an active discount when the provider is explicitly set to zero', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000);
+    const models = [modelEntry('gpt-4.1', completeInfo({ litellm_provider: 'openai' }))];
+    respondWith(models, { global: 0.17 }, { openai: 0.1 });
+    await runBridge();
+
+    now.mockReturnValue(1_000 + 60 * 60 * 1000 + 1);
+    respondWith(models, { global: 0.17 }, { openai: 0 });
+    const staleTokenConfig = await tokenConfigFor();
+    await new Promise((resolve) => setImmediate(resolve));
+    const tokenConfig = await tokenConfigFor();
+
+    expect(staleTokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.159, 12);
+    expect(tokenConfig['gpt-4.1'].prompt).toBeCloseTo(3.51, 12);
+    expect(axios.get).toHaveBeenCalledTimes(6);
+    now.mockRestore();
+  });
+
+  it('does not cache a partial snapshot when only model info succeeds', async () => {
+    axios.get.mockImplementation((url) => {
+      if (url.endsWith('/model/info')) {
+        return Promise.resolve({ data: { data: [modelEntry('gpt-4.1', completeInfo())] } });
+      }
+      return Promise.reject(new Error('margin unavailable'));
+    });
+    const appConfig = appConfigWith([{ name: 'LiteLLM' }]);
+
+    await warmLiteLLMModelCache();
+
+    expect(await applyLiteLLMTokenConfig(appConfig)).toBe(appConfig);
+  });
+
+  it('fetches one LiteLLM request triplet across repeated calls', async () => {
     respondWith([modelEntry('gpt-4.1', completeInfo())]);
 
     await runBridge();
     await runBridge();
 
-    expect(axios.get).toHaveBeenCalledTimes(1);
+    expect(axios.get).toHaveBeenCalledTimes(3);
   });
 
   it('does not mutate the input application config', async () => {
@@ -425,7 +793,7 @@ describe('applyLiteLLMTokenConfig', () => {
       await runBridge();
       await runBridge();
 
-      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledTimes(3);
     });
 
     it('retries a cold fetch once the backoff window has elapsed', async () => {
@@ -433,13 +801,13 @@ describe('applyLiteLLMTokenConfig', () => {
       axios.get.mockRejectedValue(new Error('ECONNREFUSED'));
       await runBridge();
       await runBridge();
-      expect(axios.get).toHaveBeenCalledTimes(1);
+      expect(axios.get).toHaveBeenCalledTimes(3);
 
       now.mockReturnValue(1_000 + 60_001);
       respondWith([modelEntry('gpt-4.1', completeInfo())]);
       const tokenConfig = litellmTokenConfig(await runBridge());
 
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      expect(axios.get).toHaveBeenCalledTimes(6);
       expect(tokenConfig['gpt-4.1']).toEqual({ prompt: 3, completion: 15, context: 200000 });
       now.mockRestore();
     });
@@ -459,8 +827,8 @@ describe('applyLiteLLMTokenConfig', () => {
         await applyLiteLLMTokenConfig(appConfigWith([{ name: 'LiteLLM' }])),
       );
 
-      /** one success + exactly one failed background refresh */
-      expect(axios.get).toHaveBeenCalledTimes(2);
+      /** one successful triplet + exactly one failed background triplet */
+      expect(axios.get).toHaveBeenCalledTimes(6);
       expect(tokenConfig['gpt-4.1']).toEqual({ prompt: 3, completion: 15, context: 200000 });
       now.mockRestore();
     });
