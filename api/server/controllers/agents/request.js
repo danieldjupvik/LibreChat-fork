@@ -38,7 +38,6 @@ const {
 const { logViolation } = require('~/cache');
 const { recordScheduleOutcome, isScheduleLive } = require('~/server/services/Schedules');
 const { saveMessage, getMessages, getConvo, isAgentTriggerPrincipalActive } = require('~/models');
-const { syncResponseUsage } = require('~/server/forked-code/agents/syncResponseUsage');
 const {
   GENERATION_PROTOCOL_HEADER,
   GENERATION_PROTOCOL_V2,
@@ -1619,8 +1618,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
 
         const response = await sendPromise;
-        // FORK-SENTINEL:sync-response-usage — set token/cost usage on the response before the final SSE event
-        await syncResponseUsage({ client, response });
 
         // HITL: the turn paused for human review (see AgentClient.handleRunInterrupt).
         // The job is already `requires_action` with the pending action persisted and
@@ -1822,14 +1819,6 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
-        // FORK-SENTINEL:sync-response-usage-persist — background-persist cost metadata without blocking the SSE final event
-        // Token counts are already set on the response from the non-persist call above.
-        syncResponseUsage({ client, response, req, persist: true }).catch((error) => {
-          logger.warn('[ResumableAgentController] Background usage sync failed', {
-            messageId: response?.messageId,
-            error: error?.message,
-          });
-        });
 
         if (!terminalClaim) {
           /** Stop/replacement won before the response persistence hook. The

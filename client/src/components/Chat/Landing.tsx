@@ -17,12 +17,7 @@ import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAuthContext, useGreeting } from '~/hooks';
 import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
-<<<<<<< HEAD
-import { PromptSuggestions } from '~/forked-code-custom';
-||||||| b4593f80b
-=======
 import temporaryStore from '~/store/temporary';
->>>>>>> upstream/main
 
 const containerClassName =
   'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-presentation text-text-primary dark:after:shadow-none ';
@@ -142,14 +137,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
       margin = 'mb-12';
     }
 
-    // FORK-SENTINEL:landing-suggestions-margin — extra bottom margin so PromptSuggestions clears the input
-    if (contentHeight > 334) {
-      margin = 'mb-28';
-      if (window.innerWidth < 640) {
-        margin = 'mb-0';
-      }
-    }
-
     return margin;
   }, [lineCount, description, textHasMultipleLines, contentHeight]);
 
@@ -248,8 +235,6 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             className="animate-fadeIn mt-2 max-w-md justify-center text-center text-sm"
           />
         )}
-        {/* FORK-SENTINEL:prompt-suggestions — fork-only starter prompt suggestions on the landing screen */}
-        <PromptSuggestions />
       </div>
     </div>
   );

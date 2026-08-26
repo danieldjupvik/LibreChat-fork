@@ -21,11 +21,16 @@ interface PromptSuggestionsProps {
   prompts?: PromptSuggestion[];
 }
 
+interface PromptSuggestionsData {
+  promptCategories: PromptCategory[];
+  defaultPrompts: PromptSuggestion[];
+}
+
 /**
  * Hook for managing prompt suggestions
  * Returns an array of suggested prompts to show to the user
  */
-const usePromptSuggestions = () => {
+const usePromptSuggestions = (): PromptSuggestionsData => {
   // Default hardcoded prompts
   const defaultPrompts: PromptSuggestion[] = useMemo(
     () => [
@@ -98,7 +103,9 @@ const usePromptSuggestions = () => {
  * Component for displaying prompt suggestions below the chat input
  * Styled to match the application theme using existing classes
  */
-export const PromptSuggestions = ({ prompts: externalPrompts }: PromptSuggestionsProps) => {
+export const PromptSuggestions = ({
+  prompts: externalPrompts,
+}: PromptSuggestionsProps): React.ReactElement | null => {
   const { index } = useChatContext();
   const [, setActivePrompt] = useRecoilState(store.activePromptByIndex(index));
   const { promptCategories, defaultPrompts } = usePromptSuggestions();

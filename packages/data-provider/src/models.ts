@@ -12,6 +12,7 @@ import { getMaxSubagents } from './limits';
 
 type ModelSpecSubagentsConfig = Omit<AgentSubagentsConfig, 'graphs'>;
 
+// FORK-SENTINEL:spec-schema-capability-type — fork-only capability union backing CapabilityIcons
 export type ModelCapabilityType =
   | 'reasoning'
   | 'upload_image'
@@ -56,7 +57,9 @@ export type TModelSpec = {
   showInMenu?: boolean;
   iconURL?: string | EModelEndpoint; // Allow using project-included icons
   authType?: AuthType;
+  // FORK-SENTINEL:spec-schema-icon-capabilities — fork-only capability icons on a model spec
   iconCapabilities?: ModelCapabilityType[];
+  // FORK-SENTINEL:spec-schema-badges — fork-only badge overrides (price/context/free) on a model spec
   badges?: {
     disabled?: boolean; // Disable all badges for this model
     inputPrice?: number; // Input price per million tokens
@@ -100,7 +103,7 @@ export type TModelSpec = {
   subagents?: ModelSpecSubagentsConfig;
 };
 
-// Define badges schema for validation
+// FORK-SENTINEL:spec-schema-badges-zod — fork-only runtime validation for the badge overrides
 export const badgesSchema = z.object({
   disabled: z.boolean().optional(),
   inputPrice: z.number().optional(),
@@ -218,9 +221,11 @@ export const tModelSpecSchema = z.object({
   showInMenu: z.boolean().optional(),
   iconURL: z.union([z.string(), eModelEndpointSchema]).optional(),
   authType: authTypeSchema.optional(),
+  // FORK-SENTINEL:spec-schema-icon-capabilities-zod — fork-only capability icons accepted from librechat.yaml
   iconCapabilities: z
     .array(z.enum(['reasoning', 'upload_image', 'web_search', 'experimental', 'deep_research']))
     .optional(),
+  // FORK-SENTINEL:spec-schema-badges-field — fork-only badge overrides accepted from librechat.yaml
   badges: badgesSchema.optional(),
   hideBadgeRow: z.boolean().optional(),
   webSearch: z.boolean().optional(),

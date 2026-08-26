@@ -1,7 +1,7 @@
 import React from 'react';
 import userEvent from '@testing-library/user-event';
-import { fireEvent, render, screen, waitFor } from '../../../../test/layout-test-utils';
-import AccountSettings from '../AccountSettings';
+import { fireEvent, render, screen, waitFor } from '../../test/layout-test-utils';
+import AccountSettings from '~/components/Nav/AccountSettings';
 
 const mockShowToast = jest.fn();
 const mockGetCustomerPortalUrl = jest.fn();
@@ -85,13 +85,13 @@ jest.mock('~/components/Chat/Input/Files/MyFilesModal', () => ({
   MyFilesModal: () => null,
 }));
 
-jest.mock('../Settings', () => () => null);
+jest.mock('~/components/Nav/Settings', () => () => null);
 
 jest.mock('~/forked-code-custom/customerPortal', () => ({
   getCustomerPortalUrl: (...args: unknown[]) => mockGetCustomerPortalUrl(...args),
 }));
 
-describe('AccountSettings', () => {
+describe('AccountSettings customer portal menu item (fork)', () => {
   const windowOpen = jest.fn();
 
   beforeEach(() => {

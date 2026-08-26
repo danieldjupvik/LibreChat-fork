@@ -154,7 +154,7 @@ const ErrorView = ({
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col">
         <div className="mx-auto mb-6 flex items-center justify-center md:mb-8">
-          <div className="bg-surface-destructive/20 rounded-full p-3">
+          <div className="rounded-full bg-surface-destructive/20 p-3">
             <AlertCircle size={32} className="text-surface-destructive" />
           </div>
         </div>
@@ -185,7 +185,7 @@ const ErrorView = ({
           <button
             type="button"
             onClick={onLogout}
-            className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 sm:w-auto"
+            className="text-secondary-foreground/90 inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2 sm:w-auto"
             tabIndex={0}
             aria-label="Logout"
             onKeyDown={(e) => e.key === 'Enter' && onLogout()}
@@ -243,7 +243,7 @@ const ActionButtons = ({
       disabled={isLoading}
       className={`inline-flex w-full items-center justify-center rounded-md px-4 py-2 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
         checkoutUrl
-          ? 'mb-3 border border-border-light bg-surface-secondary text-secondary-foreground/90 focus:ring-gray-400'
+          ? 'text-secondary-foreground/90 mb-3 border border-border-light bg-surface-secondary focus:ring-gray-400'
           : 'mb-3 bg-[#3bd5b0] text-surface-primary-alt focus:ring-[#3bd5b0]/50'
       }`}
       aria-label="Recheck subscription status"
@@ -260,7 +260,7 @@ const ActionButtons = ({
     <button
       type="button"
       onClick={onLogout}
-      className="inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 text-secondary-foreground/90 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+      className="text-secondary-foreground/90 inline-flex w-full items-center justify-center rounded-md border border-border-light bg-surface-secondary px-4 py-2 transition-all duration-200 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
       tabIndex={0}
       aria-label="Logout"
       onKeyDown={(e) => e.key === 'Enter' && onLogout()}
