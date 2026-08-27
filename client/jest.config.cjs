@@ -27,6 +27,8 @@ module.exports = {
     // FORK-SENTINEL:jest-forked-barrel-stub — stub the fork-only barrel so upstream tests rendering fork-wired components don't load ~/store (babel-plugin-root-import rewrites ~/ to a relative path, so match the path tail)
     '(?:^|/)forked-code-custom$': '<rootDir>/src/forked-code-custom/jestBarrelStub.tsx',
     '\\.(css)$': 'identity-obj-proxy',
+    /** Mirror the vite resolve.alias so tests parse math with the same tokenizer as production. */
+    '^micromark-extension-math$': 'micromark-extension-llm-math',
     '\\.(jpg|jpeg|png|gif|eot|otf|webp|svg|ttf|woff|woff2|mp4|webm|wav|mp3|m4a|aac|oga)$':
       'jest-file-loader',
     '^test/(.*)$': '<rootDir>/test/$1',

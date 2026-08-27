@@ -16,6 +16,7 @@ const {
   resolveAgentScopedSkillIds,
   resolveModelSpecSkillIds,
   getAgentStartupTelemetry,
+  isContentFilterError,
   buildAgentContextAttachmentsByAgentId,
   collectCodeExecutionProfileRoutes,
   getLazySubagentConfigId,
@@ -38,6 +39,7 @@ const {
 const {
   createToolEndCallback,
   createAttachmentEmitter,
+  createPtcProgressEmitter,
   createBackgroundCodeResultHandler,
   getDefaultHandlers,
 } = require('~/server/controllers/agents/callbacks');
@@ -122,7 +124,7 @@ function createToolLoader(signal, streamId = null, definitionsOnly = false, jobC
         accessibleMcpServerNames,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -306,6 +308,22 @@ const initializeClient = async ({
    * server-owned per-agent map. This covers both traditional TOOL_END events
    * and event-driven ON_TOOL_EXECUTE callbacks. */
   const toolEndCallback = async (data, metadata = {}) => {
+    /** Event-actor action receipt: recorded in graph context at execution time
+     * so fork classification never races the asynchronously populated run-step
+     * collection. Observational only — a recorder failure must not disturb the
+     * tool result path. */
+    if (typeof req._agentEventActionObserver === 'function') {
+      try {
+        req._agentEventActionObserver(data);
+      } catch (observerError) {
+        logger.warn('[toolEndCallback] Event actor action observer failed', observerError);
+      }
+    }
+    /** Policy-withheld outputs exist solely as execution evidence for the
+     * observer above; nothing may flow to artifact processing. */
+    if (data?.outputFiltered === true) {
+      return;
+    }
     const node = typeof metadata.langgraph_node === 'string' ? metadata.langgraph_node : '';
     const nodeAgentId = node.startsWith(GraphNodeKeys.TOOLS)
       ? node.slice(GraphNodeKeys.TOOLS.length)
@@ -328,7 +346,7 @@ const initializeClient = async ({
   const endpointTokenConfigByAgentId = new Map();
 
   const toolExecuteOptions = {
-    loadTools: async (toolNames, agentId) => {
+    loadTools: async (toolNames, agentId, _configurable, callerCapabilityProjection) => {
       const ctx = agentToolContexts.get(agentId) ?? {};
       logger.debug(`[ON_TOOL_EXECUTE] ctx found: ${!!ctx.userMCPAuthMap}, agent: ${ctx.agent?.id}`);
       logger.debug(`[ON_TOOL_EXECUTE] toolRegistry size: ${ctx.toolRegistry?.size ?? 'undefined'}`);
@@ -343,6 +361,7 @@ const initializeClient = async ({
         toolNames,
         agent: ctx.agent,
         toolRegistry: ctx.toolRegistry,
+        callerCapabilityProjection,
         backgroundToolNames: ctx.backgroundToolNames,
         intentToolNames: ctx.intentToolNames,
         mcpAvailableTools: ctx.mcpAvailableTools,
@@ -372,6 +391,7 @@ const initializeClient = async ({
       updateToolCallResult: db.updateToolCallResult,
     }),
     emitAttachment: createAttachmentEmitter({ res, streamId, jobCreatedAt }),
+    emitPtcProgress: createPtcProgressEmitter({ res, streamId, jobCreatedAt }),
     ...getSkillToolDeps(),
   };
 
@@ -1368,6 +1388,25 @@ const initializeClient = async ({
       fallback: usageCost.endpointTokenConfig,
     });
 
+  const eventTaskId = req._agentEventTaskId;
+  const eventChildActivity =
+    req._agentEventBindingParentConversationId != null &&
+    typeof conversationId === 'string' &&
+    conversationId !== '' &&
+    typeof eventTaskId === 'string' &&
+    eventTaskId !== ''
+      ? {
+          runId: streamId ?? eventTaskId,
+          parentRunId: req._agentEventBindingParentConversationId,
+          subagentRunId: eventTaskId,
+          subagentType: primaryConfig.id,
+          subagentAgentId: primaryConfig.id,
+          parentAgentId: req._agentEventBindingParentAgentId,
+          publish: (event) =>
+            subagentThreadTaskStore.publishTaskActivity(conversationId, eventTaskId, event),
+        }
+      : null;
+
   const eventHandlers = getDefaultHandlers({
     res,
     contentParts,
@@ -1385,6 +1424,7 @@ const initializeClient = async ({
     usageCost,
     contextUsageSink,
     usageEmitSink,
+    eventChildActivity,
   });
 
   const client = new AgentClient({
