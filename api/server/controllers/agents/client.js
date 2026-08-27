@@ -3573,13 +3573,10 @@ class AgentClient extends BaseClient {
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
-<<<<<<< HEAD
         // FORK-SENTINEL:litellm-streamusage — opt LiteLLM agents into streamUsage so createRun keeps streamed usage
         applyLiteLLMStreamUsage(agents);
         // FORK-SENTINEL:litellm-response-usage — preserve LiteLLM raw OpenAI usage details for cost snapshots
         preserveLiteLLMUsage(this.options.eventHandlers, { endpoint: this.options.endpoint });
-||||||| 08c9cc3d3
-=======
         const modelBoundCallback =
           AgentClient.prototype.createModelBoundChatModelCallback.call(this);
         const initialModelBoundAdmission =
@@ -3590,7 +3587,6 @@ class AgentClient extends BaseClient {
         if (initialModelBoundAdmission != null) {
           config.callbacks = [initialModelBoundAdmission];
         }
->>>>>>> upstream/main
 
         // TODO: needs to be added as part of AgentContext initialization
         // const noSystemModelRegex = [/\b(o1-preview|o1-mini|amazon\.titan-text)\b/gi];

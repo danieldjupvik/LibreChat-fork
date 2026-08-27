@@ -4,6 +4,11 @@ const telemetry = require('./telemetry');
 const fs = require('fs');
 const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
+// FORK-SENTINEL:init-forked-code — kept here rather than at the tail of the require
+// block below: upstream appends there on almost every sync, which collides with this
+// line (see FORK.md). Placed after module-alias so a '~' require added under
+// forked-code/ later still resolves.
+const { initForkedCode } = require('./forked-code');
 const cors = require('cors');
 const axios = require('axios');
 const express = require('express');
@@ -80,12 +85,7 @@ const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
-<<<<<<< HEAD
-const { initForkedCode } = require('./forked-code');
-||||||| 08c9cc3d3
-=======
 const agentEventMethods = require('~/models');
->>>>>>> upstream/main
 
 /** Route admin file-config MIME patterns through a linear-time engine (ReDoS-safe) on upload. */
 configureFileConfigRegexEngine();
