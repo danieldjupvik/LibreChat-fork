@@ -48,6 +48,33 @@ only when the same integration concern belongs there. Otherwise keep the change
 fork-owned or ask Daniel before proceeding. CI blocks merges to `main` that drop
 a registered sentinel or leave a conflict marker.
 
+### Where to place an inline edit
+
+Git only conflicts when the fork's edit and upstream's edit are **directly
+adjacent** — a single unchanged line between them is enough to merge cleanly.
+Blank lines the fork *adds* do not count; they are part of the fork's own added
+region. So placement, not size, drives the sync conflict rate.
+
+Two rules, both derived from auditing every sync conflict to date:
+
+1. **Never sit on an append point.** The tail of a require/import block, the last
+   field of a type or schema, the end of a route list — upstream appends there
+   too, producing an unavoidable add/add conflict. Insert mid-block, between
+   stable lines, instead.
+2. **Do not sit flush against churn.** If the neighbouring line is one upstream
+   actively edits, any change to it takes your line with it. Prefer an anchor
+   with at least one stable line on each side.
+
+Before adding an inline edit, check the target region's churn:
+
+```bash
+git log --since='90 days ago' --oneline -L <start>,<end>:<file> upstream/main | grep -c '^[0-9a-f]\{7,\} '
+```
+
+`api/server/index.js` is the worked example: its fork require sits just after the
+`module-alias` registration (3 commits/90d, no append point) rather than at the
+tail of the require block (7 commits/90d, upstream's append target).
+
 ## Running checks (fast)
 
 ### Resource safety (mandatory)
