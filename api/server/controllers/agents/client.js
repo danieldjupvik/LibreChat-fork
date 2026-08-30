@@ -3857,14 +3857,41 @@ class AgentClient extends BaseClient {
         alwaysApplySkillPrimes,
       });
       const useLegacyContent = this.options.agent?.useLegacyContent === true;
+      const reachableAgents = collectReachableAgents([
+        this.options.agent,
+        ...(this.agentConfigs?.values() ?? []),
+      ]);
+      const deriveCompactionSemanticIndex = this.eventActorContinuation !== 'warm';
+      const messageFormatOptions = {
+        ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
+        ...(freshSkillPrimeNames.size > 0 ? { skipSkillBodyNames: freshSkillPrimeNames } : {}),
+        ...(useLegacyContent ? { legacyContent: true } : {}),
+      };
+      let semanticIntentToolNames;
+      if (deriveCompactionSemanticIndex) {
+        semanticIntentToolNames = new Set();
+        const semanticIntentBlockedToolNames = new Set();
+        for (const agent of reachableAgents) {
+          for (const toolName of agent.semanticIntentToolNames ?? []) {
+            semanticIntentToolNames.add(toolName);
+          }
+          for (const toolName of agent.semanticIntentBlockedToolNames ?? []) {
+            semanticIntentBlockedToolNames.add(toolName);
+          }
+        }
+        for (const toolName of semanticIntentBlockedToolNames) {
+          semanticIntentToolNames.delete(toolName);
+        }
+      }
+      const hasMessageFormatOptions =
+        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent;
       const formatOptions =
-        needsReasoningContentFormat || freshSkillPrimeNames.size > 0 || useLegacyContent
+        hasMessageFormatOptions || deriveCompactionSemanticIndex
           ? {
-              ...(needsReasoningContentFormat ? { preserveReasoningContent: true } : {}),
-              ...(freshSkillPrimeNames.size > 0
-                ? { skipSkillBodyNames: freshSkillPrimeNames }
+              ...messageFormatOptions,
+              ...(deriveCompactionSemanticIndex
+                ? { compactionSemanticIndex: { intentToolNames: semanticIntentToolNames } }
                 : {}),
-              ...(useLegacyContent ? { legacyContent: true } : {}),
             }
           : undefined;
       let {
@@ -3872,8 +3899,9 @@ class AgentClient extends BaseClient {
         indexTokenCountMap,
         summary: initialSummary,
         boundaryTokenAdjustment,
+        compactionSemanticIndex,
       } = formatAgentMessages(
-        stripActivityLabelParts(payload),
+        deriveCompactionSemanticIndex ? payload : stripActivityLabelParts(payload),
         this.indexTokenCountMap,
         toolSet,
         skillPrimeResult?.skills,
@@ -3934,10 +3962,7 @@ class AgentClient extends BaseClient {
       assertModelBoundContent({
         filters: appConfig?.filters,
         legacyPii: appConfig?.messageFilter?.pii,
-        agents: collectReachableAgents([
-          this.options.agent,
-          ...(this.agentConfigs?.values() ?? []),
-        ]),
+        agents: reachableAgents,
         skills: [...(manualSkillPrimes ?? []), ...(alwaysApplySkillPrimes ?? [])],
         memories: this.modelBoundMemoryContexts,
         files: this.modelBoundFileContexts,
@@ -3967,7 +3992,7 @@ class AgentClient extends BaseClient {
               undefined,
               toolSet,
               skillPrimeResult?.skills,
-              formatOptions,
+              hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
           : initialMessages;
 
@@ -4140,6 +4165,7 @@ class AgentClient extends BaseClient {
           // rebuilt turns use the summary reconstructed from durable history.
           indexTokenCountMap: this.eventActorContinuation === 'warm' ? {} : indexTokenCountMap,
           initialSummary: continuationSummary,
+          ...(deriveCompactionSemanticIndex ? { compactionSemanticIndex } : {}),
           initialSessions,
           calibrationRatio,
           runId: this.responseMessageId,
