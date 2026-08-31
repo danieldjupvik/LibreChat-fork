@@ -13,6 +13,7 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
   isUserSourced,
@@ -264,11 +265,33 @@ export class MCPManager extends UserConnectionManager {
    */
   public async discoverServerTools(args: t.ToolDiscoveryOptions): Promise<t.ToolDiscoveryResult> {
     const { serverName, user } = args;
+    const registry = MCPServersRegistry.getInstance();
+    const serverConfig = await registry.getServerConfig(serverName, user?.id, args.configServers);
+
+    if (!serverConfig) {
+      logger.warn('[MCP][Discovery] Server configuration not found');
+      return { tools: null, oauthRequired: false, oauthUrl: null };
+    }
 
     try {
-      const existingAppConnection = await this.appConnections?.get(serverName);
-      if (existingAppConnection && (await existingAppConnection.isConnected())) {
-        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot();
+      const useAppConnection =
+        canUseAppConnection(serverConfig) &&
+        (await registry.isAppServerConfig(serverName, serverConfig));
+      const existingAppConnection = useAppConnection
+        ? await this.appConnections?.get(serverName)
+        : null;
+      /** Cancels the shared connection's health probe and `tools/list` for THIS caller only —
+       *  an aborted probe reports false without touching the shared connection's state. Combines
+       *  the budget with the caller's own signal so cancelling the request also stops the work. */
+      const budgetSignal =
+        existingAppConnection != null
+          ? createDeadlineAbortSignal(args.deadlineMs, args.signal)
+          : undefined;
+      if (existingAppConnection && (await existingAppConnection.isConnected(budgetSignal))) {
+        const snapshot = await existingAppConnection.fetchOrderedToolsSnapshot(
+          args.deadlineMs,
+          budgetSignal,
+        );
         return {
           tools: snapshot.complete ? snapshot.tools : null,
           oauthRequired: false,
@@ -279,14 +302,16 @@ export class MCPManager extends UserConnectionManager {
       logger.debug('[MCP][Discovery] App connection unavailable; trying discovery mode');
     }
 
-    const serverConfig = await MCPServersRegistry.getInstance().getServerConfig(
-      serverName,
-      user?.id,
-      args.configServers,
-    );
-
-    if (!serverConfig) {
-      logger.warn('[MCP][Discovery] Server configuration not found');
+    /** A probe aborted by the caller is not a dead server: falling through here would open a
+     *  fresh connection on behalf of a request that no longer exists (or a budget already
+     *  spent), and the fallback keeps running after the caller has gone. */
+    if (
+      args.signal?.aborted === true ||
+      (args.deadlineMs != null && Date.now() >= args.deadlineMs)
+    ) {
+      logger.debug(
+        '[MCP][Discovery] Caller cancelled or budget spent; skipping discovery fallback',
+      );
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
@@ -301,7 +326,6 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const registry = MCPServersRegistry.getInstance();
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
@@ -350,6 +374,8 @@ export class MCPManager extends UserConnectionManager {
         requestBody: args.requestBody,
         graphTokenResolver: args.graphTokenResolver,
         connectionTimeout: args.connectionTimeout,
+        deadlineMs: args.deadlineMs,
+        signal: args.signal,
       });
       return finalizeDiscoveryResult(result);
     }
@@ -370,6 +396,7 @@ export class MCPManager extends UserConnectionManager {
       requestBody: args.requestBody,
       graphTokenResolver: args.graphTokenResolver,
       connectionTimeout: args.connectionTimeout,
+      deadlineMs: args.deadlineMs,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,

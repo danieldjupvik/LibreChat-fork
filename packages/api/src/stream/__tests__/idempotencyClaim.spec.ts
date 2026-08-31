@@ -64,6 +64,20 @@ describe('InMemoryJobStore.claimIdempotencyKey', () => {
     await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
   });
 
+  it('reads an idempotency receipt without creating a missing claim', async () => {
+    const receipt = {
+      streamId: 's1',
+      conversationId: 'c1',
+      claimToken: 'token-1',
+      claimedAt: 1,
+      startedAt: 2,
+    };
+    await expect(store.getIdempotencyClaim('user:missing')).resolves.toBeNull();
+    await store.claimIdempotencyKey('user:existing', receipt, 1200);
+    await expect(store.getIdempotencyClaim('user:existing')).resolves.toEqual(receipt);
+    await expect(store.hasIdempotencyKey('user:missing')).resolves.toBe(false);
+  });
+
   it('does not report an expired claim as existing', async () => {
     jest.useFakeTimers();
     try {
@@ -234,6 +248,27 @@ describe('GenerationJobManager start-generation claim', () => {
     await expect(manager.hasGenerationClaim('user-2', 'req-1')).resolves.toBe(false);
   });
 
+  it('reads durable admission evidence after the live job is gone', async () => {
+    await store.claimIdempotencyKey(
+      '{stream-a}:user-1:req-1',
+      {
+        streamId: 'stream-a',
+        conversationId: 'convo-a',
+        claimToken: 'claim-token',
+        claimedAt: 1,
+        startedAt: 42,
+      },
+      1200,
+    );
+
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-1', 'stream-a', 'convo-a'),
+    ).resolves.toEqual({ generationId: 'stream-a', generationCreatedAt: 42 });
+    await expect(
+      manager.getGenerationAdmissionEvidence('user-1', 'req-2', 'stream-a', 'convo-a'),
+    ).resolves.toBeNull();
+  });
+
   it('claims the exact legacy key before the same-slot primary with staggered TTLs', async () => {
     const claimSpy = jest.spyOn(store, 'claimIdempotencyKey');
     const result = await manager.claimGeneration(
@@ -339,6 +374,75 @@ describe('GenerationJobManager start-generation claim', () => {
         },
       });
     }
+  });
+
+  it('fences a missing continuation claim as a settled recovery tombstone', async () => {
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-recovered',
+        'stream-recovered',
+        'stream-recovered',
+      ),
+    ).resolves.toBe('fenced');
+
+    await expect(
+      manager.claimGeneration('user-1', 'req-recovered', 'stream-recovered', 'stream-recovered'),
+    ).resolves.toMatchObject({
+      claimed: false,
+      existing: { startedAt: expect.any(Number) },
+    });
+  });
+
+  it('invalidates an unpublished continuation creator before manual recovery', async () => {
+    const original = await manager.claimGeneration(
+      'user-1',
+      'req-recovery-race',
+      'stream-recovery-race',
+      'stream-recovery-race',
+      2,
+    );
+
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-recovery-race',
+        'stream-recovery-race',
+        'stream-recovery-race',
+      ),
+    ).resolves.toBe('fenced');
+    await expect(
+      manager.createJob('stream-recovery-race', 'user-1', 'stream-recovery-race', {
+        idempotencyClientRequestId: 'req-recovery-race',
+        idempotencyClaimToken: original.existing!.claimToken,
+        initialMetadata: { generationProtocolVersion: 2 },
+      }),
+    ).rejects.toThrow('Generation idempotency claim was taken over before job creation');
+    await expect(store.getJob('stream-recovery-race')).resolves.toBeNull();
+  });
+
+  it('reports started when generation creation wins the recovery fence', async () => {
+    const claim = await manager.claimGeneration(
+      'user-1',
+      'req-created-first',
+      'stream-created-first',
+      'stream-created-first',
+      2,
+    );
+    await manager.createJob('stream-created-first', 'user-1', 'stream-created-first', {
+      idempotencyClientRequestId: 'req-created-first',
+      idempotencyClaimToken: claim.existing!.claimToken,
+      initialMetadata: { generationProtocolVersion: 2 },
+    });
+
+    await expect(
+      manager.fenceGenerationClaimForRecovery(
+        'user-1',
+        'req-created-first',
+        'stream-created-first',
+        'stream-created-first',
+      ),
+    ).resolves.toBe('started');
   });
 
   it('accepts an exact legacy started mark whose committed reply was lost', async () => {

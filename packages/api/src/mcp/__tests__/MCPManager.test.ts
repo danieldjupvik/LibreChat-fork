@@ -2957,6 +2957,110 @@ describe('MCPManager', () => {
       expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
     });
 
+    it('gives a budgeted caller an abort signal for the app-connection probe and snapshot', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const deadlineMs = Date.now() + 3000;
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, deadlineMs });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(expect.any(AbortSignal));
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        deadlineMs,
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('lets the caller signal cancel app-connection work even without a deadline', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(mockConnection),
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(mockConnection.isConnected).toHaveBeenCalledWith(controller.signal);
+      expect(mockConnection.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+        undefined,
+        controller.signal,
+      );
+    });
+
+    it('does not start discovery fallback for a caller whose signal already aborted', async () => {
+      const isConnected = jest.fn().mockResolvedValue(false);
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue({ ...mockConnection, isConnected }),
+      });
+      const controller = new AbortController();
+      controller.abort();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(result.tools).toBeNull();
+      expect(MCPConnectionFactory.discoverTools).not.toHaveBeenCalled();
+    });
+
+    it('forwards the caller signal into non-OAuth fallback discovery', async () => {
+      mockAppConnections({
+        get: jest.fn().mockResolvedValue(null),
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+      const controller = new AbortController();
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({ serverName, signal: controller.signal });
+
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ signal: controller.signal }),
+      );
+    });
+
+    it('does not reuse an app connection for a tenant-scoped config override', async () => {
+      const configOverride = {
+        type: 'streamable-http' as const,
+        url: 'https://tenant.example.com/mcp',
+        source: 'config' as const,
+      };
+      const appConnections = { get: jest.fn().mockResolvedValue(mockConnection) };
+      mockAppConnections(appConnections);
+      (mockRegistryInstance.getServerConfig as jest.Mock).mockResolvedValue(configOverride);
+      (mockRegistryInstance.isAppServerConfig as jest.Mock).mockResolvedValue(false);
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const result = await manager.discoverServerTools({
+        serverName,
+        user: { id: 'tenant-user' } as IUser,
+        configServers: { [serverName]: configOverride },
+      });
+
+      expect(result.tools).toEqual(mockTools);
+      expect(mockRegistryInstance.getServerConfig).toHaveBeenCalledWith(serverName, 'tenant-user', {
+        [serverName]: configOverride,
+      });
+      expect(appConnections.get).not.toHaveBeenCalled();
+      expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+        expect.objectContaining({ serverConfig: configOverride }),
+        expect.objectContaining({ user: expect.objectContaining({ id: 'tenant-user' }) }),
+      );
+    });
+
     it('should use MCPConnectionFactory.discoverTools when no app connection available', async () => {
       const discoveryConnection = {
         disconnect: jest.fn().mockResolvedValue(undefined),

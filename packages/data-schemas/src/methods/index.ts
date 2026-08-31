@@ -27,6 +27,7 @@ import { createAgentCategoryMethods, type AgentCategoryMethods } from './agentCa
 import { createAgentApiKeyMethods, type AgentApiKeyMethods } from './agentApiKey';
 /* MCP Servers */
 import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
+import { createCodeEnvironmentMethods, type CodeEnvironmentMethods } from './codeEnvironment';
 /* Plugin Auth */
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
@@ -65,6 +66,8 @@ import {
   type ParentSubagentTaskRecord,
   type SubagentThreadViewMessageRecord,
   type SubagentTaskResultClaim,
+  type BackgroundToolResultClaim,
+  type BackgroundToolResultRecord,
 } from './message';
 import {
   createConversationMethods,
@@ -121,11 +124,19 @@ import {
 } from './skill';
 import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
+  createAgentQueuedTurnMethods,
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
+  type AgentQueuedTurnMethods,
+} from './queuedTurn';
+import {
   createAgentTriggerDeliveryMethods,
   AgentTriggerDeliveryConflictError,
   recordAgentEventActorReceiptMetric,
   setAgentEventActorReceiptMetricObserver,
   type AgentTriggerDeliveryMethods,
+  type AgentTriggerProducerLeaseStatus,
   type AgentEventActorReceiptMetric,
   type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
@@ -187,6 +198,11 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
+export {
+  AgentQueuedTurnCapacityError,
+  AgentQueuedTurnConflictError,
+  AgentQueuedTurnLaneRetiredError,
+};
 
 export type AllMethods = UserMethods &
   SessionMethods &
@@ -201,6 +217,7 @@ export type AllMethods = UserMethods &
   AgentCategoryMethods &
   AgentApiKeyMethods &
   MCPServerMethods &
+  CodeEnvironmentMethods &
   UserGroupMethods &
   AclEntryMethods &
   SystemGrantMethods &
@@ -225,6 +242,7 @@ export type AllMethods = UserMethods &
   SkillMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
+  AgentQueuedTurnMethods &
   ScheduleMethods &
   AgentMethods &
   ConfigMethods &
@@ -278,9 +296,77 @@ export function createMethods(
 
   const messageMethods = createMessageMethods(mongoose);
 
+  const agentQueuedTurnMethods = createAgentQueuedTurnMethods(mongoose);
+  const agentTriggerDeliveryMethods = createAgentTriggerDeliveryMethods(mongoose, {
+    purgeQueuedTurnsForUser: (user) =>
+      agentQueuedTurnMethods.deleteAllAgentQueuedTurnsForUser({
+        user: typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user,
+      }),
+  });
+
   const conversationMethods = createConversationMethods(mongoose, {
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
+    deleteAgentQueuedTurns: async (user, conversations) => {
+      /** Queued-turn ownership is ObjectId-backed. Conversation methods also
+       * support synthetic/non-ObjectId owners in embedded integrations and
+       * tests; those owners cannot have queued-turn rows to retire. */
+      if (!mongoose.isObjectIdOrHexString(user)) {
+        return;
+      }
+      const owner = new mongoose.Types.ObjectId(user);
+      const settledAt = new Date();
+      const deliveryKeys = await agentQueuedTurnMethods.prepareAgentQueuedTurnConversationDeletion({
+        user: owner,
+        targets: conversations,
+        settledAt,
+      });
+      await Promise.all(
+        deliveryKeys.map(async (deliveryKey) => {
+          const retirement = {
+            deliveryKey,
+            sourceId: 'agent-queued-turn',
+            reason: 'queued_turn_conversation_deleted',
+            settledAt,
+          };
+          let retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
+          if (!retired) {
+            /** A delivery can exhaust immediately before owner deletion wins.
+             * Convert that operator-requeueable dead row into the same terminal
+             * retirement receipt before removing its source record. */
+            retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery({
+              ...retirement,
+              onlyIfDead: true,
+            });
+          }
+          if (!retired) {
+            /** Successful and dead delivery receipts have bounded retention.
+             * A source in `published` proves the delivery existed, so a missing
+             * receipt after both retirement attempts is terminal absence. */
+            const fenced =
+              await agentQueuedTurnMethods.beginAgentQueuedTurnMissingDeliveryRetirement({
+                deliveryKey,
+              });
+            if (fenced) {
+              const delivery =
+                await agentTriggerDeliveryMethods.getAgentTriggerDelivery(deliveryKey);
+              if (delivery == null) {
+                retired = await agentQueuedTurnMethods.markAgentQueuedTurnMissingDeliveryRetired({
+                  deliveryKey,
+                });
+              }
+            }
+          }
+          if (retired) {
+            await agentQueuedTurnMethods.markAgentQueuedTurnDeliveryRetired({ deliveryKey });
+          }
+        }),
+      );
+      await agentQueuedTurnMethods.deletePreparedAgentQueuedTurnConversations({
+        user: owner,
+        targets: conversations,
+      });
+    },
   });
 
   // ACL entry methods (used internally for removeAllPermissions)
@@ -336,7 +422,6 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
-
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
@@ -351,6 +436,7 @@ export function createMethods(
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
     ...createMCPServerMethods(mongoose),
+    ...createCodeEnvironmentMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...userGroupMethods,
     ...aclEntryMethods,
@@ -377,7 +463,8 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
-    ...createAgentTriggerDeliveryMethods(mongoose),
+    ...agentTriggerDeliveryMethods,
+    ...agentQueuedTurnMethods,
     ...createScheduleMethods(mongoose),
     /* Tier 5 */
     ...agentMethods,
@@ -405,6 +492,7 @@ export type {
   AgentCategoryMethods,
   AgentApiKeyMethods,
   MCPServerMethods,
+  CodeEnvironmentMethods,
   UserGroupMethods,
   AclEntryMethods,
   SystemGrantMethods,
@@ -424,6 +512,8 @@ export type {
   ParentSubagentThreadRecord,
   SubagentThreadViewMessageRecord,
   SubagentTaskResultClaim,
+  BackgroundToolResultClaim,
+  BackgroundToolResultRecord,
   ConversationMethods,
   AgentEventActorReconciliationStorageMetrics,
   ChatProjectMethods,
@@ -446,6 +536,8 @@ export type {
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
   AgentTriggerDeliveryMethods,
+  AgentQueuedTurnMethods,
+  AgentTriggerProducerLeaseStatus,
   AgentEventActorReceiptMetric,
   AgentEventActorReceiptStorageMetrics,
   ScheduleMethods,

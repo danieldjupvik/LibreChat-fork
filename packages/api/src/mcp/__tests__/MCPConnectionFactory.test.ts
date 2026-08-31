@@ -4190,6 +4190,195 @@ describe('MCPConnectionFactory', () => {
       expect(result.tools).toBeNull();
       expect(mockLogger.debug).toHaveBeenCalled();
     });
+
+    describe('deadline bounding', () => {
+      /** Builds distinct per-construction connection mocks so the authenticated attempt and the
+       *  unauthenticated fallback can be told apart, recording lifecycle order across both. */
+      const trackConnections = (events: string[]) => {
+        let index = 0;
+        mockMCPConnection.mockImplementation(() => {
+          const label = index++ === 0 ? 'auth' : 'unauth';
+          const instance = {
+            connect: jest.fn(async () => {
+              events.push(`${label}:connect`);
+              throw new Error('Connection failed');
+            }),
+            isConnected: jest.fn().mockResolvedValue(false),
+            setOAuthTokens: jest.fn(),
+            on: jest.fn(),
+            once: jest.fn(),
+            off: jest.fn(),
+            removeListener: jest.fn(),
+            emit: jest.fn(),
+            dispose: jest.fn(async () => {
+              events.push(`${label}:dispose`);
+            }),
+          } as unknown as jest.Mocked<MCPConnection>;
+          return instance;
+        });
+      };
+
+      it('disposes the authenticated attempt before the fallback opens a second connection', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+
+        const result = await MCPConnectionFactory.discoverTools({
+          serverName: 'test-server',
+          serverConfig: mockServerConfig,
+        });
+
+        expect(result.tools).toBeNull();
+        expect(events).toEqual([
+          'auth:connect',
+          'auth:dispose',
+          'unauth:connect',
+          'unauth:dispose',
+        ]);
+      });
+
+      it('skips discovery entirely once the deadline has passed', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { deadlineMs: Date.now() - 1 },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(events).toEqual([]);
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+        expect(mockPreProcessGraphTokens).not.toHaveBeenCalled();
+      });
+
+      it('stops before token resolution when the budget expires during credential preparation', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+        mockPreProcessGraphTokens.mockImplementationOnce(async (options) => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          return options;
+        });
+
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { deadlineMs: Date.now() + 20, graphTokenResolver: jest.fn() },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(events).toEqual([]);
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+      });
+
+      it('skips discovery entirely for a caller whose signal is already aborted', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+        const controller = new AbortController();
+        controller.abort();
+
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { signal: controller.signal },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(events).toEqual([]);
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+        expect(mockPreProcessGraphTokens).not.toHaveBeenCalled();
+      });
+
+      it('stops before connecting when the caller aborts during credential preparation', async () => {
+        const events: string[] = [];
+        trackConnections(events);
+        const controller = new AbortController();
+        mockPreProcessGraphTokens.mockImplementationOnce(async (options) => {
+          controller.abort();
+          return options;
+        });
+
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { signal: controller.signal, graphTokenResolver: jest.fn() },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(mockMCPConnection).not.toHaveBeenCalled();
+      });
+
+      it('abandons a hung connect promptly when a signal-only caller aborts mid-connect', async () => {
+        const events: string[] = [];
+        let index = 0;
+        mockMCPConnection.mockImplementation(() => {
+          const label = index++ === 0 ? 'auth' : 'unauth';
+          return {
+            connect: jest.fn(() => {
+              events.push(`${label}:connect`);
+              return new Promise(() => {});
+            }),
+            isConnected: jest.fn().mockResolvedValue(false),
+            setOAuthTokens: jest.fn(),
+            on: jest.fn(),
+            once: jest.fn(),
+            off: jest.fn(),
+            removeListener: jest.fn(),
+            emit: jest.fn(),
+            dispose: jest.fn(async () => {
+              events.push(`${label}:dispose`);
+            }),
+          } as unknown as jest.Mocked<MCPConnection>;
+        });
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), 20);
+
+        const start = Date.now();
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { signal: controller.signal },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(Date.now() - start).toBeLessThan(2000);
+        expect(events).toEqual(['auth:connect', 'auth:dispose']);
+        expect(mockMCPConnection).toHaveBeenCalledTimes(1);
+      });
+
+      it('forwards the deadline to the tools/list snapshot', async () => {
+        const deadlineMs = Date.now() + 5000;
+        mockConnectionInstance.connect.mockResolvedValue(undefined);
+        mockConnectionInstance.isConnected.mockResolvedValue(true);
+        mockConnectionInstance.fetchOrderedToolsSnapshot = jest
+          .fn()
+          .mockResolvedValue({ tools: [], complete: true });
+
+        await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { deadlineMs },
+        );
+
+        expect(mockConnectionInstance.fetchOrderedToolsSnapshot).toHaveBeenCalledWith(
+          deadlineMs,
+          expect.any(AbortSignal),
+        );
+        expect(mockConnectionInstance.isConnected).toHaveBeenCalledWith(expect.any(AbortSignal));
+      });
+
+      it('clamps a long initTimeout to the remaining budget instead of waiting it out', async () => {
+        mockProcessMCPEnv.mockReturnValue({
+          ...mockServerConfig,
+          initTimeout: 30000,
+        } as t.MCPOptions);
+        mockConnectionInstance.connect.mockImplementation(() => new Promise(() => {}));
+        mockConnectionInstance.isConnected.mockResolvedValue(false);
+
+        const start = Date.now();
+        const result = await MCPConnectionFactory.discoverTools(
+          { serverName: 'test-server', serverConfig: mockServerConfig },
+          { deadlineMs: Date.now() + 50 },
+        );
+
+        expect(result.tools).toBeNull();
+        expect(Date.now() - start).toBeLessThan(2000);
+      });
+    });
   });
 
   describe('proactive OAuth flow', () => {
