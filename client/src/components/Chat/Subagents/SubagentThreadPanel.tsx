@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import { useAtom, useSetAtom, useStore } from 'jotai';
 import { Clock, OctagonPause, X, Zap } from 'lucide-react';
 import { dataService, ForkOptions } from 'librechat-data-provider';
 import {
@@ -10,13 +11,6 @@ import {
   useMediaQuery,
   useToastContext,
 } from '@librechat/client';
-import {
-  useRecoilCallback,
-  useRecoilState,
-  useRecoilValue,
-  useResetRecoilState,
-  useSetRecoilState,
-} from 'recoil';
 import type {
   ParentSubagentTaskSummary,
   SubagentControlAction,
@@ -25,7 +19,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ComposerKeyVerdict, ComposerStopProps, SendAction } from '@librechat/client';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
-import type { ActiveSubagentPanel, SubagentControlUiState } from '~/store/subagents';
+import type { ActiveSubagentPanel, SubagentControlUiState } from './state';
 import type { ComposerKeyAction } from '~/utils/shortcuts';
 import type { OptionWithIcon } from '~/common';
 import {
@@ -46,22 +40,23 @@ import {
   activeSubagentPanel,
   subagentControlStateByTask,
   subagentControlStateKey,
-  subagentProgressByToolCallId,
   subagentProgressKey,
-} from '~/store/subagents';
+  useSubagentProgress,
+} from './state';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
 import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useFocusTrap, useLocalize, useNavigateToConvo } from '~/hooks';
-import useComposerBindings from '~/hooks/Input/useComposerBindings';
+import { useConfiguredFooter } from '~/components/Chat/Footer';
 import { useParentSubagents } from './ParentSubagentsProvider';
 import SubagentConversation from './SubagentConversation';
 import { eventSubagentSelection } from './eventSelection';
+import { resolveSubagentAgentId } from './identity';
 import { useAgentsMapContext } from '~/Providers';
 import { isLiveSubagentStatus } from './status';
-import { renderAgentAvatar } from '~/utils';
-import store from '~/store';
+import { cn, renderAgentAvatar } from '~/utils';
+import { useChatSurface } from './surface';
 
 const EVENT_TASK_PAGE_SIZE = 3;
 const TERMINAL_CONTROL_REASONS = new Set([
@@ -115,7 +110,11 @@ const failedControlLocaleKey = (reason?: string) => {
 };
 
 export default function SubagentThreadPanel({ selection }: { selection: ActiveSubagentPanel }) {
+  /** The shell carries the deployment's answer, so this surface lays out once,
+   *  like the composer beside it. */
+  const clearsFooter = useConfiguredFooter();
   const localize = useLocalize();
+  const panelStore = useStore();
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -126,8 +125,11 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
    *  `aside` the trap knows, so Tab never reaches it. Either way those readers
    *  get the same actions as controls of their own, inside the panel. */
   const coarsePointer = useMediaQuery('(hover: none)');
-  const enterToSend = useRecoilValue(store.enterToSend);
-  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+  const {
+    enterToSend,
+    handOffComposerText,
+    composerBindings: { shortcutsEnabled, submitOverride, yieldedChords },
+  } = useChatSurface();
   const [actorPickerOpen, setActorPickerOpen] = useState(false);
   /** A continuation is out. Declared here because the selection-advance effect
    *  below has to defer to it, well before the mutation itself exists. */
@@ -136,34 +138,33 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   /** Unsent words in the composer are enough on their own: whatever put them
    *  there, an advance would change the control identity and wipe them. */
   const selectionHeldForDraft = continuationPending || controlMessage.trim() !== '';
-  const resetSelection = useResetRecoilState(activeSubagentPanel);
-  const setSelection = useSetRecoilState(activeSubagentPanel);
+  const setSelection = useSetAtom(activeSubagentPanel);
+  const resetSelection = useCallback(() => setSelection(null), [setSelection]);
   const agentsMap = useAgentsMapContext();
   const { byMessageId, byThreadId, refresh } = useParentSubagents();
-  const progress = useRecoilValue(
-    subagentProgressByToolCallId(
-      subagentProgressKey(
-        selection.parentMessageId,
-        selection.event?.progressKey ?? selection.toolCallId,
-        selection.partIndex,
-      ),
+  const progress = useSubagentProgress(
+    subagentProgressKey(
+      selection.parentMessageId,
+      selection.event?.progressKey ?? selection.toolCallId,
+      selection.partIndex,
     ),
   );
+  const foregroundAgentId = resolveSubagentAgentId(progress, selection.subagentIdentity);
+  const foregroundAgent = foregroundAgentId == null ? undefined : agentsMap?.[foregroundAgentId];
   const foregroundTitle =
     selection.subagentType === 'self'
       ? localize('com_ui_subagent_dialog_title_self')
-      : localize('com_ui_subagent_dialog_title', { 0: selection.subagentType });
+      : localize('com_ui_subagent_dialog_title', {
+          0: foregroundAgent?.name || selection.subagentType,
+        });
   const threadId = selection.durable?.threadId ?? '';
   const taskId = selection.durable?.taskId ?? '';
   const controlIdentity = subagentControlStateKey(selection.parentConversationId, threadId, taskId);
-  const [controlState, setControlState] = useRecoilState(
-    subagentControlStateByTask(controlIdentity),
-  );
-  const setControlStateForIdentity = useRecoilCallback(
-    ({ set }) =>
-      (identity: string, state: SubagentControlUiState | null) =>
-        set(subagentControlStateByTask(identity), state),
-    [],
+  const [controlState, setControlState] = useAtom(subagentControlStateByTask(controlIdentity));
+  const setControlStateForIdentity = useCallback(
+    (identity: string, state: SubagentControlUiState | null) =>
+      panelStore.set(subagentControlStateByTask(identity), state),
+    [panelStore],
   );
   const transientControl = controlState?.receipt ?? null;
   const retryControl = controlState?.retry ?? null;
@@ -302,12 +303,6 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
    *  that made the request. Switch actors mid-flight and the words in the field
    *  are the new actor's, so this falls back to what was there at submission. */
   const continuationRef = useRef<{ identity: string; text: string } | null>(null);
-  const handOffComposerText = useRecoilCallback(
-    ({ set }) =>
-      (conversationId: string, text: string) =>
-        set(store.pendingComposerTextByConvoId(conversationId), text),
-    [],
-  );
   const continueChat = useForkConvoMutation({
     onSuccess: (result) => {
       const continuedConversationId = result.conversation?.conversationId;
@@ -852,7 +847,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   }, [agentsMap, eventSiblings, selection.event, threadId]);
   const selectedActorLabel =
     actorOptions.find((option) => option.value === threadId)?.label ?? panelTitle;
-  const selectedActorAgentId = selectedEventActor?.agentId ?? threadView?.agentId;
+  const selectedActorAgentId =
+    selectedEventActor?.agentId ?? threadView?.agentId ?? foregroundAgentId;
   const selectedActorIcon = renderAgentAvatar(
     selectedActorAgentId == null ? undefined : agentsMap?.[selectedActorAgentId],
     { size: 'icon', showBorder: false },
@@ -1468,11 +1464,12 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         {activityPanel}
       </ApprovalProvider>
       {(showControlFooter || composerMode != null) && (
-        /* The main chat form's own bottom rhythm: its composer clears the
-           viewport floor by the height of the disclaimer beneath it, and this
-           one clears it by the same, so the two surfaces end on one line when
-           the panel is open beside the thread. */
-        <div className="shrink-0 px-3 pb-10 pt-2">
+        /* The main chat form's own bottom rhythm, read from the same answer it
+           reads (`useConfiguredFooter`): a conversation clears the footer bar
+           when the deployment configured one and otherwise keeps only enough to
+           show the composer's shadow, and this surface keeps the same, so the
+           two end on one line when the panel is open beside the thread. */
+        <div className={cn('shrink-0 px-3 pt-2', clearsFooter ? 'pb-10' : 'pb-4')}>
           {transientControl?.status === 'failed' && (
             <Alert variant="error" className="mb-2 flex items-center gap-2">
               <span className="min-w-0 flex-1">

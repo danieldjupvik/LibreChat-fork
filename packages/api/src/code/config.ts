@@ -1,5 +1,5 @@
 import { logger } from '@librechat/data-schemas';
-import { EModelEndpoint } from 'librechat-data-provider';
+import { CODE_ENVIRONMENT_DECISION_VERSION, EModelEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   AccessibleCodeEnvironmentConfiguration,
@@ -12,6 +12,42 @@ type ConfigurationRegistry = {
   ) => Promise<AccessibleCodeEnvironmentConfiguration[]>;
   listRegisteredIds: () => Promise<string[]>;
 };
+
+type StatefulCodeConfig = NonNullable<
+  NonNullable<AppConfig['endpoints']>[EModelEndpoint.agents]
+>['statefulCodeSessions'];
+type CodeEnvironmentConfig = NonNullable<NonNullable<StatefulCodeConfig>['environments']>[number];
+
+/**
+ * Resolves the deployment-wide browser protocol gate. The exact version match
+ * keeps older and future wire shapes on the legacy-safe path.
+ */
+export function resolveCodeEnvironmentDecisionVersion(
+  configuredVersion?: string,
+): typeof CODE_ENVIRONMENT_DECISION_VERSION | undefined {
+  return configuredVersion === String(CODE_ENVIRONMENT_DECISION_VERSION)
+    ? CODE_ENVIRONMENT_DECISION_VERSION
+    : undefined;
+}
+
+/** Enables the implicit managed route only after the versioned rollout is complete. */
+export function isImplicitStatefulCodeRouteAvailable(
+  configuredVersion?: string,
+  statefulBaseURL?: string,
+): boolean {
+  return (
+    resolveCodeEnvironmentDecisionVersion(configuredVersion) != null &&
+    (statefulBaseURL?.trim().length ?? 0) > 0
+  );
+}
+
+function isExecutableCodeEnvironment(environment: CodeEnvironmentConfig): boolean {
+  return !(
+    environment.pairing?.allowPrincipalWorkers === true &&
+    environment.pairing.workerId == null &&
+    environment.workerId == null
+  );
+}
 
 function retainDeploymentCodeEnvironments(
   appConfig: AppConfig,
@@ -79,6 +115,16 @@ export async function mergeAccessibleCodeEnvironments({
       )
       .map((environment) => [environment.id, environment]) ?? [],
   );
+  const effectiveControlPlanes = new Map(
+    sessions.environments
+      ?.filter(
+        (environment) =>
+          environment.owner === 'deployment' &&
+          environment.type === 'attached' &&
+          environment.pairing != null,
+      )
+      .map((environment) => [environment.id, environment]) ?? [],
+  );
   const registeredAliasIds = new Set(
     registeredIds.filter((environmentId) => !deploymentEnvironments.has(environmentId)),
   );
@@ -86,7 +132,14 @@ export async function mergeAccessibleCodeEnvironments({
     ({ controlPlaneId, baseURL: _persistedBaseURL, ...environment }) => {
       const controlPlane = deploymentEnvironments.get(controlPlaneId);
       if (controlPlane == null || deploymentEnvironments.has(environment.id)) return [];
-      return [{ ...environment, baseURL: controlPlane.baseURL }];
+      return [
+        {
+          ...environment,
+          controlPlaneId,
+          baseURL: controlPlane.baseURL,
+          configSchema: effectiveControlPlanes.get(controlPlaneId)?.configSchema,
+        },
+      ];
     },
   );
   const principalEnvironmentIds = new Set(
@@ -115,14 +168,33 @@ export async function mergeAccessibleCodeEnvironments({
   ) {
     return appConfig;
   }
-  const mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments];
+  let mergedEnvironments = [...filteredEnvironments, ...effectivePrincipalEnvironments].map(
+    (environment) =>
+      !isExecutableCodeEnvironment(environment) &&
+      'default' in environment &&
+      environment.default === true
+        ? { ...environment, default: false as const }
+        : environment,
+  );
   if (
     mergedEnvironments.length > 0 &&
     !mergedEnvironments.some(
-      (environment) => 'default' in environment && environment.default === true,
+      (environment) =>
+        isExecutableCodeEnvironment(environment) &&
+        'default' in environment &&
+        environment.default === true,
     )
   ) {
-    mergedEnvironments[0] = { ...mergedEnvironments[0], default: true };
+    const defaultIndex = mergedEnvironments.findIndex(
+      (environment) =>
+        isExecutableCodeEnvironment(environment) &&
+        (environment.owner !== 'principal' || !process.env.LIBRECHAT_CODE_BASEURL_STATEFUL?.trim()),
+    );
+    if (defaultIndex >= 0) {
+      mergedEnvironments = mergedEnvironments.map((environment, index) =>
+        index === defaultIndex ? { ...environment, default: true as const } : environment,
+      );
+    }
   }
 
   return {

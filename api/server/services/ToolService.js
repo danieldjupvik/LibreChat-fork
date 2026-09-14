@@ -18,6 +18,7 @@ const {
   buildWebSearchContext,
   buildImageToolContext,
   buildToolClassification,
+  supportsProgrammaticCodeExecution,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
   getCodeApiAuthHeaders,
@@ -31,6 +32,7 @@ const {
   inspectContentWithTraversal,
   ContentFilterError,
   assertModelBoundContent,
+  reportLocatorTraversalFailure,
   extractToolArgumentContent,
   contentFilterModelBoundBlockResponse,
   getSafeErrorMetadata,
@@ -44,9 +46,21 @@ const {
   isNormalizationSensitiveName,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
+  codeExecutionAuthHeaders,
+  createAttachedWorkspaceBashTool,
+  resolveAttachedWorkspaceCommandTimeoutMax,
+  createGitIdentityProgrammaticBashTool,
   resolveCodeExecutionContext,
+  resolveCodeExecutionWorkspaceContext,
+  resolveRunFileCodeExecutionContext,
   resolveCallerCapabilityProjectionSnapshot,
+  CREATE_FILE_TOOL_NAME,
+  EDIT_FILE_TOOL_NAME,
+  LIST_WORKSPACE_FILES_TOOL_NAME,
+  SEARCH_WORKSPACE_TOOL_NAME,
   getTransactionsConfig,
+  checkToolRolePermission,
+  resolveToolRolePermissions,
 } = require('@librechat/api');
 const {
   Time,
@@ -62,6 +76,7 @@ const {
   isActionTool,
   actionDelimiter,
   ImageVisionTool,
+  PermissionTypes,
   hasActivePiiFields,
   hasActivePiiPatterns,
   openapiToFunction,
@@ -80,6 +95,7 @@ const {
   domainParser,
 } = require('./ActionService');
 const {
+  getAppConfig,
   getEndpointsConfig,
   getMCPServerTools,
   getCachedTools,
@@ -100,7 +116,7 @@ const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSe
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { recordUsage } = require('~/server/services/Threads');
 const { loadTools } = require('~/app/clients/tools/util');
-const { findPluginAuthsByKeys } = require('~/models');
+const { findPluginAuthsByKeys, getRoleByName } = require('~/models');
 const { getFlowStateManager, getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 
@@ -130,6 +146,33 @@ const getActiveToolResources = (toolResources, tools) => {
   return Object.keys(activeResources).length > 0 ? activeResources : null;
 };
 
+/** Deployment switch guarding each role-gated tool. Spelled out rather than
+ *  inferred from the tool name so the two enums can drift apart safely. */
+const toolCapabilityGates = {
+  [Tools.file_search]: AgentCapabilities.file_search,
+  [Tools.execute_code]: AgentCapabilities.execute_code,
+  [Tools.web_search]: AgentCapabilities.web_search,
+};
+
+/**
+ * Resolves the role grants for an agent's gated tools. A tool already switched
+ * off by its `AgentCapabilities` entry is skipped, so a disabled deployment
+ * costs no role read and logs no denial.
+ *
+ * @param {ServerRequest} req
+ * @param {string[]} [tools] - The agent's configured tool names.
+ * @param {Set<string>} enabledCapabilities
+ * @returns {Promise<(tool: string) => boolean>} Predicate; `true` for any tool
+ * that carries no role permission.
+ */
+const resolveAgentToolPermissions = (req, tools, enabledCapabilities) =>
+  resolveToolRolePermissions({
+    req,
+    tools,
+    getRoleByName,
+    isEligible: (tool) => enabledCapabilities.has(toolCapabilityGates[tool]),
+  });
+
 const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
   const filters = req.config?.filters;
   if (filters == null) {
@@ -143,6 +186,7 @@ const assertToolResourcesAllowed = ({ req, toolResources, tools }) => {
     Array.isArray(resource?.files) ? resource.files : [],
   );
   assertModelBoundContent({
+    onTraversalFailure: reportLocatorTraversalFailure,
     filters,
     agents: [{ tool_resources: activeResources }],
     files,
@@ -160,6 +204,7 @@ const withoutEncryptedActionSecrets = (action) => {
 const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
   if (filters != null) {
     assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
       filters,
       actions: actions.map(withoutEncryptedActionSecrets),
     });
@@ -180,7 +225,11 @@ const prepareStoredActionsForUse = async ({ actions, filters, decrypt }) => {
     })),
   );
   if (filters != null) {
-    assertModelBoundContent({ filters, actions: decryptedActions });
+    assertModelBoundContent({
+      onTraversalFailure: reportLocatorTraversalFailure,
+      filters,
+      actions: decryptedActions,
+    });
   }
   return decryptedActions;
 };
@@ -195,7 +244,7 @@ const prepareActionSnapshotForTools = async ({ agentId, toolNames, filters, decr
   if (!toolNames.some((toolName) => isActionTool(toolName))) {
     return null;
   }
-  const storedActions = (await loadActionSets({ agent_id: agentId })) ?? [];
+  const storedActions = (await loadActionSets({ agentId })) ?? [];
   if (storedActions.length === 0) {
     return { storedActions, actionSets: [] };
   }
@@ -514,7 +563,7 @@ async function processRequiredActions(client, requiredActions) {
         /** @type {Action[]} */
         const storedActions =
           (await loadActionSets({
-            assistant_id: client.req.body.assistant_id,
+            assistantId: client.req.body.assistant_id,
           })) ?? [];
         const actionSets = await prepareStoredActionsForUse({
           actions: storedActions,
@@ -733,6 +782,7 @@ const isBuiltInTool = (toolName) =>
  * @param {string} [params.agentResourceType] - Permission resource type for the authorized agent route
  * @param {string|null} [params.streamId] - Stream ID for resumable mode
  * @param {number} [params.jobCreatedAt] - The generation epoch that owns emitted tool events
+ * @param {AbortSignal} [params.signal] - Effective run cancellation signal
  * @returns {Promise<{
  *   toolDefinitions?: import('@librechat/api').LCTool[];
  *   toolRegistry?: Map<string, import('@librechat/api').LCTool>;
@@ -752,6 +802,7 @@ async function loadToolDefinitionsWrapper({
   tool_resources,
   codeExecutionContext,
   accessibleMcpServerNames,
+  signal,
 }) {
   if (!agent.tools || agent.tools.length === 0) {
     return { toolDefinitions: [] };
@@ -774,10 +825,15 @@ async function loadToolDefinitionsWrapper({
   const actionsEnabled = checkCapability(AgentCapabilities.actions);
   const deferredToolsEnabled = checkCapability(AgentCapabilities.deferred_tools);
   const programmaticToolsEnabled = enabledCapabilities.has(AgentCapabilities.programmatic_tools);
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
+  /** Gates the sandbox everywhere it is reachable, not just the `execute_code`
+   *  entry in `filteredTools`: this flag also drives tool classification and the
+   *  programmatic bash tool, which would otherwise run code for a denied role. */
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
-  const resolvedCodeExecutionContext =
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
+  const baseCodeExecutionContext =
     codeExecutionContext ??
     resolveCodeExecutionContext({
       statefulSessions:
@@ -791,19 +847,26 @@ async function loadToolDefinitionsWrapper({
       agentId: agent.id,
       conversationId: runtimeRequestBody?.conversationId,
     });
+  const resolvedCodeExecutionContext = await resolveCodeExecutionWorkspaceContext({
+    context: baseCodeExecutionContext,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
+    environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+    getAppConfig,
+  });
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     }
     if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     }
     if (tool === Tools.web_search) {
-      return checkCapability(AgentCapabilities.web_search);
+      return checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1129,6 +1192,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1158,6 +1222,7 @@ async function loadToolDefinitionsWrapper({
       requestScopedConnections,
       upstreamTokenProvider,
       oboIdentityContext,
+      recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
@@ -1247,6 +1312,9 @@ async function loadToolDefinitionsWrapper({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
+      codeExecutionContext: resolvedCodeExecutionContext,
+      codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
       provider: agent.provider,
       mcpServerNames,
       rawServerNames: mcpRawServerNames,
@@ -1305,6 +1373,7 @@ async function loadToolDefinitionsWrapper({
           connectionTimeout: Time.TWO_MINUTES,
           upstreamTokenProvider,
           oboIdentityContext,
+          recoveryPolicy: appConfig?.mcpSettings?.catalogRecovery,
         });
 
         if (result?.availableTools && Object.keys(result.availableTools).length > 0) {
@@ -1337,6 +1406,9 @@ async function loadToolDefinitionsWrapper({
           deferredToolsEnabled,
           programmaticToolsEnabled,
           codeExecutionEnabled,
+          codeExecutionContext: resolvedCodeExecutionContext,
+          codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+          getAppConfig,
           provider: agent.provider,
           mcpServerNames,
           rawServerNames: mcpRawServerNames,
@@ -1390,9 +1462,13 @@ async function loadToolDefinitionsWrapper({
         tool_resources,
         agentId: agent.id,
         agentResourceType,
+        signal,
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
         executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
+        ...(resolvedCodeExecutionContext.bridgeWorkerId
+          ? { bridgeWorkerId: resolvedCodeExecutionContext.bridgeWorkerId }
+          : {}),
       });
       if (toolContext) {
         dynamicToolContextMap[Tools.execute_code] = toolContext;
@@ -1471,6 +1547,7 @@ async function loadToolDefinitionsWrapper({
     actionsEnabled,
     primedCodeFiles,
     oauthActionToolNames,
+    codeExecutionContext: resolvedCodeExecutionContext,
   };
 }
 
@@ -1519,6 +1596,7 @@ async function loadAgentTools({
         tool_resources,
         codeExecutionContext: providedCodeExecutionContext,
         accessibleMcpServerNames,
+        signal,
       });
     } catch (error) {
       if (
@@ -1565,15 +1643,16 @@ async function loadAgentTools({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
+  const canUseTool = await resolveAgentToolPermissions(req, agent.tools, enabledCapabilities);
 
   let includesWebSearch = false;
   const _agentTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return checkCapability(AgentCapabilities.file_search) && canUseTool(tool);
     } else if (tool === Tools.execute_code) {
-      return checkCapability(AgentCapabilities.execute_code);
+      return checkCapability(AgentCapabilities.execute_code) && canUseTool(tool);
     } else if (tool === Tools.web_search) {
-      includesWebSearch = checkCapability(AgentCapabilities.web_search);
+      includesWebSearch = checkCapability(AgentCapabilities.web_search) && canUseTool(tool);
       return includesWebSearch;
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1633,12 +1712,14 @@ async function loadAgentTools({
 
   const codeExecutionEnabled =
     agent.tools?.includes(Tools.execute_code) === true &&
-    enabledCapabilities.has(AgentCapabilities.execute_code);
+    enabledCapabilities.has(AgentCapabilities.execute_code) &&
+    canUseTool(Tools.execute_code);
+  const runtimeRequestBody = requestBody ?? req.body;
   const statefulCodeSessions =
     codeExecutionEnabled &&
     enabledCapabilities.has(AgentCapabilities.stateful_code_sessions) &&
     agent.stateful_code_sessions === true;
-  const codeExecutionContext =
+  const baseCodeExecutionContext =
     providedCodeExecutionContext ??
     resolveCodeExecutionContext({
       statefulSessions: statefulCodeSessions,
@@ -1647,8 +1728,15 @@ async function loadAgentTools({
       environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
       userId: req.user.id,
       agentId: agent.id,
-      conversationId: requestBody?.conversationId ?? req.body?.conversationId,
+      conversationId: runtimeRequestBody?.conversationId,
     });
+  const codeExecutionContext = await resolveCodeExecutionWorkspaceContext({
+    context: baseCodeExecutionContext,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
+    environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+    getAppConfig,
+  });
 
   const { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles } = await loadTools({
     agent,
@@ -1692,7 +1780,13 @@ async function loadAgentTools({
       deferredToolsEnabled,
       programmaticToolsEnabled,
       codeExecutionEnabled,
-      authHeaders: () => getCodeApiAuthHeaders(req),
+      codeEnvironments: appConfig?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
+      authHeaders: () =>
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        ),
       codeExecutionContext,
     });
 
@@ -1755,6 +1849,7 @@ async function loadAgentTools({
       actionsEnabled,
       tools: agentTools,
       primedCodeFiles,
+      codeExecutionContext,
     };
   }
 
@@ -1775,6 +1870,7 @@ async function loadAgentTools({
       actionsEnabled,
       tools: agentTools,
       primedCodeFiles,
+      codeExecutionContext,
     };
   }
   // See registerActionTools for the key-shape rationale.
@@ -1903,6 +1999,7 @@ async function loadAgentTools({
     actionsEnabled,
     tools: agentTools,
     primedCodeFiles,
+    codeExecutionContext,
   };
 }
 
@@ -1955,6 +2052,7 @@ async function loadToolsForExecution({
   conversationId,
   actionsEnabled,
   accessibleMcpServerNames,
+  runFileCodeExecutionContext,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -1992,10 +2090,16 @@ async function loadToolsForExecution({
   const isPTCRequested = ptcToolNames.length > 0;
   const isBashToolRequested = toolNames.includes(AgentConstants.BASH_TOOL);
   const isLegacyExecuteCodeRequested = toolNames.includes(Tools.execute_code);
-  const isCodeExecutionToolRequested = isBashToolRequested || isLegacyExecuteCodeRequested;
+  const isWorkspaceSearchRequested = toolNames.includes(SEARCH_WORKSPACE_TOOL_NAME);
+  const isWorkspaceListRequested = toolNames.includes(LIST_WORKSPACE_FILES_TOOL_NAME);
+  const isCodeExecutionToolRequested =
+    isBashToolRequested ||
+    isLegacyExecuteCodeRequested ||
+    isWorkspaceSearchRequested ||
+    isWorkspaceListRequested;
   const isSkillToolRequested = toolNames.includes(AgentConstants.SKILL_TOOL);
   const isSandboxFileToolRequested = toolNames.some((name) =>
-    [AgentConstants.READ_FILE, AgentConstants.CREATE_FILE, AgentConstants.EDIT_FILE].includes(name),
+    [AgentConstants.READ_FILE, CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME].includes(name),
   );
 
   let enabledCapabilities;
@@ -2011,9 +2115,18 @@ async function loadToolsForExecution({
   if (actionsEnabled === undefined) {
     actionsEnabled = enabledCapabilities.has(AgentCapabilities.actions);
   }
+  /** Short-circuits before the role read, so an agent without `execute_code` or a
+   *  deployment with the capability off pays nothing for the check. */
   const codeExecutionEnabled =
     enabledCapabilities?.has(AgentCapabilities.execute_code) === true &&
-    agent?.tools?.includes(Tools.execute_code) === true;
+    agent?.tools?.includes(Tools.execute_code) === true &&
+    (await checkToolRolePermission({
+      req,
+      user: req?.user,
+      permissionType: PermissionTypes.RUN_CODE,
+      getRoleByName,
+      context: 'loadToolsForExecution',
+    }));
 
   /** Resolve the trusted endpoint/profile from the actually executing agent.
    * This stays per-agent across handoffs and subagents; no graph-global stateful
@@ -2022,7 +2135,7 @@ async function loadToolsForExecution({
     codeExecutionEnabled &&
     enabledCapabilities?.has(AgentCapabilities.stateful_code_sessions) === true &&
     agent?.stateful_code_sessions === true;
-  const codeExecutionContext = resolveCodeExecutionContext({
+  const baseCodeExecutionContext = resolveCodeExecutionContext({
     statefulSessions: statefulCodeSessions,
     environment: agent?.stateful_code_environment,
     environmentId: agent?.code_environment_id,
@@ -2031,6 +2144,17 @@ async function loadToolsForExecution({
     agentId: agent?.id,
     conversationId: conversationId ?? runtimeRequestBody?.conversationId,
   });
+  const codeExecutionContext = await resolveCodeExecutionWorkspaceContext({
+    context: baseCodeExecutionContext,
+    requestedSelections: runtimeRequestBody?.codeWorkspaces,
+    persistedSelections: req.resolvedConversation?.codeWorkspaces,
+    environments: req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+    getAppConfig,
+  });
+  Object.assign(
+    codeExecutionContext,
+    resolveRunFileCodeExecutionContext(codeExecutionContext, runFileCodeExecutionContext),
+  );
   configurable.codeExecutionContext = codeExecutionContext;
 
   const isPTC =
@@ -2068,7 +2192,15 @@ async function loadToolsForExecution({
     configurable.toolRegistry = toolRegistry;
   }
 
-  if (isPTC && toolRegistry) {
+  const canLoadPTC =
+    isPTC &&
+    toolRegistry != null &&
+    (await supportsProgrammaticCodeExecution(
+      codeExecutionContext,
+      req.config?.endpoints?.agents?.statefulCodeSessions?.environments,
+      getAppConfig,
+    ));
+  if (canLoadPTC) {
     configurable.toolRegistry = toolRegistry;
     try {
       /**
@@ -2076,12 +2208,20 @@ async function loadToolsForExecution({
        * library so PTC calls share the same managed auth context.
        */
       for (const name of ptcToolNames) {
-        const ptcTool = createBashProgrammaticToolCallingTool({
-          authHeaders: () => getCodeApiAuthHeaders(req),
+        const ptcOptions = {
+          authHeaders: () =>
+            codeExecutionAuthHeaders(
+              (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+              codeExecutionContext,
+            ),
           baseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           runtimeSessionHint: codeExecutionContext.runtimeSessionHint,
-        });
+        };
+        const ptcTool =
+          codeExecutionContext.environmentType === 'attached'
+            ? createGitIdentityProgrammaticBashTool(ptcOptions, agent?.git_identity)
+            : createBashProgrammaticToolCallingTool(ptcOptions);
         ptcTool.name = name;
         allLoadedTools.push(ptcTool);
       }
@@ -2093,7 +2233,9 @@ async function loadToolsForExecution({
   const isBashTool =
     isBashToolRequested &&
     codeExecutionEnabled &&
-    toolRegistry?.has(AgentConstants.BASH_TOOL) === true;
+    toolRegistry?.has(AgentConstants.BASH_TOOL) === true &&
+    (codeExecutionContext.environmentType !== 'attached' ||
+      codeExecutionContext.codeWorkspace?.operations.includes('execute_command') === true);
   if (isBashToolRequested && !isBashTool) {
     logger.warn(
       `[loadToolsForExecution] Skipping unregistered or unauthorized ${AgentConstants.BASH_TOOL}. ` +
@@ -2102,10 +2244,26 @@ async function loadToolsForExecution({
   }
   if (isBashTool) {
     try {
-      const bashTool = createBashExecutionTool({
-        authHeaders: () => getCodeApiAuthHeaders(req),
-        ...codeExecutionContext,
-      });
+      const authHeaders = () =>
+        codeExecutionAuthHeaders(
+          (bridgeWorkerId) => getCodeApiAuthHeaders(req, bridgeWorkerId),
+          codeExecutionContext,
+        );
+      const bashTool =
+        codeExecutionContext.environmentType === 'attached'
+          ? createAttachedWorkspaceBashTool({
+              authHeaders,
+              baseUrl: codeExecutionContext.baseUrl,
+              workspaceId: codeExecutionContext.codeWorkspace.workspaceId,
+              gitIdentity: agent?.git_identity,
+              maxTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+                codeExecutionContext.codeEnvironmentConfigSchema,
+              ),
+            })
+          : createBashExecutionTool({
+              authHeaders,
+              ...codeExecutionContext,
+            });
       allLoadedTools.push(bashTool);
     } catch (error) {
       logger.error(
@@ -2133,7 +2291,7 @@ async function loadToolsForExecution({
   ]);
 
   let ptcOrchestratedToolNames = [];
-  if (isPTC && toolRegistry) {
+  if (canLoadPTC) {
     ptcOrchestratedToolNames = Array.from(toolRegistry.values())
       .filter(
         (toolDef) =>

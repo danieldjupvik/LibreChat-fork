@@ -7,6 +7,7 @@ import {
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
+  SKILL_BODY_MAX_LENGTH,
 } from 'librechat-data-provider';
 import {
   partitionIssues,
@@ -565,6 +566,31 @@ describe('skill validation helpers', () => {
 });
 
 describe('Skill CRUD methods', () => {
+  it('rejects an oversized body before scanning its frontmatter on create', async () => {
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(methods.createSkill(makeSkillInput({ body }))).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
+  it('rejects an oversized body before scanning its frontmatter on update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: 1,
+        update: { body },
+      }),
+    ).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
   it('creates a skill with version 1 and default fileCount 0', async () => {
     const { skill, warnings } = await methods.createSkill(makeSkillInput());
     expect(skill.name).toBe('demo-skill');
@@ -819,6 +845,70 @@ describe('Skill CRUD methods', () => {
     } | null;
     expect(agentAfter?.skills).toEqual([]);
     expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from an all-scoped agent', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'all-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()], { skills_scope: 'all' }));
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('all');
+  });
+
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from a selected-scoped agent', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'selected-scoped-only-skill' }),
+    );
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'selected' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('selected');
+  });
+
+  it('deleteSkill disables skills when the entire allowlist is deleted from a none-scoped agent', async () => {
+    /** `skills_enabled: true` with `skills_scope: none` is a shape the API
+     *  accepts. It renders as Off, and `skillDeps` reads the master flag on
+     *  its own as permission to expose the authoring tools, so cleanup has to
+     *  clear it rather than treat the explicit scope as an opt-out. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'none-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'none' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+    expect(agentAfter?.skills_scope).toBe('none');
   });
 
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {

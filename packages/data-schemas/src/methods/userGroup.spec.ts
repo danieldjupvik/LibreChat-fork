@@ -1516,6 +1516,7 @@ describe('userGroup methods', () => {
           username: 'alice',
           password: 'password123',
           provider: 'local',
+          role: SystemRoles.ADMIN,
         },
         {
           name: 'Bob Jones',
@@ -1577,6 +1578,7 @@ describe('userGroup methods', () => {
       const userResults = results.filter((r) => r.type === PrincipalType.USER);
       expect(userResults.length).toBeGreaterThanOrEqual(1);
       expect(userResults[0].name).toBe('Alice Smith');
+      expect(userResults[0].isAdmin).toBe(true);
     });
 
     it('finds matching groups', async () => {
@@ -1608,6 +1610,21 @@ describe('userGroup methods', () => {
       const results = await methods.searchPrincipals('mod', 10, [PrincipalType.ROLE]);
       expect(results.every((r) => r.type === PrincipalType.ROLE)).toBe(true);
       expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('excludes users from a GROUP and ROLE filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, [
+        PrincipalType.GROUP,
+        PrincipalType.ROLE,
+      ]);
+      expect(new Set(results.map((r) => r.type))).toEqual(
+        new Set([PrincipalType.GROUP, PrincipalType.ROLE]),
+      );
+    });
+
+    it('returns no principals for an empty type filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, []);
+      expect(results).toEqual([]);
     });
 
     it('respects limitPerType', async () => {
