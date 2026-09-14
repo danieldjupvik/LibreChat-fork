@@ -259,7 +259,10 @@ Without it, OpenID JWT request burst caching can serve a stale `req.user` until 
 
 Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) using auto-fix when available. All TypeScript/ESLint warnings and errors **must** be resolved.
 
-<<<<<<< HEAD
+`npm run sort-imports` with no arguments rewrites every file under `api/`, `client/src` and the four
+`packages/*/src` roots — far beyond what you touched. Always pass explicit paths:
+`npm run sort-imports -- path/to/file.ts`.
+
 ---
 
 <!-- FORK-SENTINEL:claude-fork-pointer — fork guidance entrypoint; see .fork/README.md -->
@@ -269,9 +272,3 @@ Fix all formatting lint errors (trailing spaces, tabs, newlines, indentation) us
 This repository is a fork with an active upstream. Read **`FORK.md`** before changing code. Most importantly: tag every inline edit to an upstream file with a `FORK-SENTINEL:<id>` comment and register it in `.fork/sentinels.tsv` — CI blocks merges that drop a sentinel or leave a conflict marker.
 
 Run checks the fast way (see `FORK.md` → "Running checks"): **never `npx eslint .`** — the type-aware config makes a full-repo lint take minutes; lint only changed files instead. Type-check needs the workspace packages built first, and a full-client `tsc` is not expected to be clean (pre-existing upstream debt).
-||||||| 14d4f2789
-=======
-`npm run sort-imports` with no arguments rewrites every file under `api/`, `client/src` and the four
-`packages/*/src` roots — far beyond what you touched. Always pass explicit paths:
-`npm run sort-imports -- path/to/file.ts`.
->>>>>>> upstream/main
