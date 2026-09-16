@@ -1945,7 +1945,7 @@ class AgentClient extends BaseClient {
       agentsEConfig?.toolApproval?.enabled !== false,
     );
     const persistedCodeEnvironmentDecision = resolvePersistableCodeEnvironmentDecision({
-      conversationId: this.conversationId,
+      conversationId: this.options.req.body.conversationId,
       decision: this.options.req._codeEnvironmentDecision,
       conversation: this.options.req.resolvedConversation,
       requested: this.options.req.body,
