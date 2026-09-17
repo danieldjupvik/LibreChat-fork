@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { getBillingTestEnv } from '../.fork/e2e/billing';
 import { defineConfig } from '@playwright/test';
 import mockConfig from './playwright.config.mock';
 
@@ -24,6 +25,8 @@ export default defineConfig({
       ...server.env,
       CONFIG_PATH: path.resolve(__dirname, 'lighthouse/librechat.yaml'),
       ENDPOINTS: 'openAI',
+      // FORK-SENTINEL:lighthouse-billing-fixture — grant only the isolated test user billing access.
+      ...getBillingTestEnv(),
       OPENAI_MODELS: 'gpt-4o-mini',
       ASSISTANTS_API_KEY: '',
       E2E_USE_MEMORY_MONGO: 'true',
