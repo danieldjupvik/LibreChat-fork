@@ -455,6 +455,8 @@ const startServer = async () => {
   initForkedCode(app);
   app.use('/metrics', metricsRouter);
 
+  app.use('/api', routes.openapi);
+
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
 
