@@ -512,6 +512,14 @@ export interface ConversationMethodDeps
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
   ) => Promise<void>;
+  eraseAgentTriggerDeliveryConversationResults?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
+  prepareAgentTriggerConversationResultErasure?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 export function createConversationMethods(
@@ -2417,6 +2425,31 @@ export function createConversationMethods(
         return null;
       }
 
+      /** `$setOnInsert` only reaches a chat this save creates, yet a chat whose earlier turns never
+       * involved a code-capable agent holds no decision either: without this fill its first
+       * workspace choice is dropped and the next turn starts undecided again. The filter repeats
+       * that absence, so a concurrent writer that decided first keeps its decision and a chat that
+       * already holds one is never touched. Only a whole decision seeds a row, never bare
+       * selections. */
+      if (
+        decisionOnInsert.codeEnvironmentMode != null &&
+        conversation.codeEnvironmentMode == null &&
+        (conversation.codeWorkspaces?.length ?? 0) === 0
+      ) {
+        const seeded = await Conversation.updateOne(
+          {
+            _id: conversation._id,
+            codeEnvironmentMode: { $in: [null] },
+            $or: [{ codeWorkspaces: { $in: [null] } }, { codeWorkspaces: { $size: 0 } }],
+          },
+          { $set: decisionOnInsert },
+          { timestamps: false },
+        );
+        if (seeded.modifiedCount > 0) {
+          Object.assign(conversation, decisionOnInsert);
+        }
+      }
+
       /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
       if (
         interfaceConfig?.retentionMode === RetentionMode.ALL &&
@@ -3210,7 +3243,18 @@ export function createConversationMethods(
           })),
         );
         await options?.beforeDelete?.(waveIds);
+        await deps?.prepareAgentTriggerConversationResultErasure?.(user, waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
+        if (result.deletedCount > 0) {
+          /** Result erasure is irreversible. Keep receipts intact when a
+           * pre-delete hook or the conversation delete itself fails, so a
+           * retained conversation cannot lose a receipt-only completion. */
+          try {
+            await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
+          } catch (error) {
+            logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+          }
+        }
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
         await reconcileDeletedWave(wave, result.deletedCount);
@@ -3241,6 +3285,11 @@ export function createConversationMethods(
             allTenants: true,
           })),
         );
+        try {
+          await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, recoveryConversationIds);
+        } catch (error) {
+          logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+        }
       }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
