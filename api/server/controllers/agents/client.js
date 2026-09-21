@@ -228,7 +228,7 @@ const db = require('~/models');
 
 const loadAgent = (params) =>
   loadAgentFn(params, {
-    getAgent: db.getAgent,
+    getAgent: db.getAgentWithVersionCount,
     getMCPServerTools,
     getAccessibleMCPServers,
   });

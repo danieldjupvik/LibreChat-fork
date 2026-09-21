@@ -1969,6 +1969,7 @@ export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 export const traceViewerDefaults = {
   enabled: false,
   showInputOutput: false,
+  showToolNames: false,
   maxRecords: 1000,
   maxContentLength: 50_000,
   requestsPerMinute: 30,
@@ -1999,6 +2000,12 @@ const traceViewerSchema = z.object({
   enabled: z.boolean().optional(),
   /** Returns observation input, output and metadata in the record inspector. */
   showInputOutput: z.boolean().optional(),
+  /**
+   * Names the tools of each tool round from the tracing backend's own record of the round, at the
+   * cost of further backend reads per listed page, which carry each round's input and output.
+   * Off, a round is named only when the chat's messages can be matched to the trace.
+   */
+  showToolNames: z.boolean().optional(),
   /** Observations read from the tracing backend per request. */
   maxRecords: boundedIntegerSchema('maxRecords'),
   /** Characters kept from each input, output and metadata value before truncation. */
@@ -2013,6 +2020,7 @@ export type TTraceViewerConfig = z.infer<typeof traceViewerSchema>;
 export type TResolvedTraceViewerConfig = {
   enabled: boolean;
   showInputOutput: boolean;
+  showToolNames: boolean;
 } & Record<TraceViewerLimitField, number>;
 
 function boundedInteger(value: unknown, field: TraceViewerLimitField): number {
@@ -2033,6 +2041,7 @@ export function resolveTraceViewerConfig(
   return {
     enabled: config?.enabled === true,
     showInputOutput: config?.showInputOutput === true,
+    showToolNames: config?.showToolNames === true,
     maxRecords: boundedInteger(config?.maxRecords, 'maxRecords'),
     maxContentLength: boundedInteger(config?.maxContentLength, 'maxContentLength'),
     requestsPerMinute: boundedInteger(config?.requestsPerMinute, 'requestsPerMinute'),
@@ -2057,6 +2066,8 @@ export const interfaceSchema = z
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
+    /** Milliseconds between syntax highlights while a code block streams. */
+    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2178,6 +2189,7 @@ export const interfaceSchema = z
   })
   .default({
     modelSelect: true,
+    codeHighlightThrottleMs: 300,
     parameters: true,
     presets: true,
     multiConvo: true,
@@ -2401,7 +2413,7 @@ export type TStartupConfig = {
 
 export type TSharedLinkStartupInterface = Pick<
   Partial<TInterfaceConfig>,
-  'privacyPolicy' | 'termsOfService'
+  'privacyPolicy' | 'termsOfService' | 'codeHighlightThrottleMs'
 >;
 
 export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
