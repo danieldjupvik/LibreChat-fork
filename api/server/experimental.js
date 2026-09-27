@@ -53,6 +53,8 @@ const {
   startCodeEnvironmentLifecycleReconciler,
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
+  cacheConfig,
+  createClusteredFileSweep,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
@@ -406,14 +408,7 @@ if (cluster.isMaster) {
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
-  /**
-   * The master may assign the sweep worker before or after this worker has
-   * loaded app config. These flags join the IPC assignment with config
-   * availability and ensure the background sweep starts only once.
-   */
-  let shouldStartExpiredFileSweep = false;
-  let expiredFileSweepOptions = null;
-  let expiredFileSweepStarted = false;
+  const expiredFileSweep = createClusteredFileSweep(cacheConfig.USE_REDIS, startExpiredFileSweep);
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   const rejectScheduleWritesUntilReady = (req, res, next) => {
@@ -424,15 +419,6 @@ if (cluster.isMaster) {
       code: 'SCHEDULES_NOT_SUPPORTED',
       error: 'Scheduled chats are not available in clustered mode.',
     });
-  };
-
-  const startExpiredFileSweepOnce = () => {
-    if (!shouldStartExpiredFileSweep || expiredFileSweepStarted || !expiredFileSweepOptions) {
-      return;
-    }
-
-    expiredFileSweepStarted = true;
-    startExpiredFileSweep(expiredFileSweepOptions);
   };
 
   /** Handle inter-process messages from master */
@@ -452,12 +438,10 @@ if (cluster.isMaster) {
   });
   process.on('message', (msg) => {
     if (msg.type === 'file-retention-sweep-worker') {
-      shouldStartExpiredFileSweep = true;
       logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
-      startExpiredFileSweepOnce();
+      expiredFileSweep.assign();
     }
   });
-
   const startServer = async () => {
     logger.info(`Worker ${process.pid} initializing...`);
 
@@ -529,8 +513,7 @@ if (cluster.isMaster) {
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
       basePath: path.resolve(__dirname, '../..'),
     });
-    expiredFileSweepOptions = { appConfig, loadAppConfig: getAppConfig };
-    startExpiredFileSweepOnce();
+    expiredFileSweep.configure({ appConfig, loadAppConfig: getAppConfig });
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
       await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
@@ -686,6 +669,8 @@ if (cluster.isMaster) {
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
 
+    app.use('/api', routes.openapi);
+
     /** 404 for unmatched API routes */
     app.use('/api', apiNotFound);
 
@@ -720,7 +705,12 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
-        await initializeAgentTriggerService({ address: server.address() });
+        await initializeAgentTriggerService({
+          address: server.address(),
+          completionResultBatchSize:
+            baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+          idlePolling: baseAppConfig?.endpoints?.agents?.eventDriven?.idlePolling,
+        });
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

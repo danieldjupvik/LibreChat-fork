@@ -57,8 +57,10 @@ import type { BackgroundToolResultState } from './harvest';
 import type { CapabilityToolNames } from './selection';
 import {
   BACKGROUND_TASK_TIMEOUT_MS,
+  type PendingBackgroundCompletion,
   type BackgroundToolDeadClaimRecovery,
   type BackgroundToolWakeupAdmission,
+  type PendingBackgroundCompletionControls,
 } from './backgroundCompletion';
 import {
   CREATE_FILE_TOOL_NAME,
@@ -358,7 +360,7 @@ Provide a background_task_id to poll one task; omit it to list every background 
 
 const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Background tools and detached subagents use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Ordinary tool execution remains process-local and does not survive restart; once its result is persisted, completion delivery may continue on another replica. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Background tools and detached subagents use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. A task is outstanding until its result is delivered, not merely until it stops running: a finished task whose delivery is "pending" will still arrive as a new turn, so never report it as done or cancelled on the strength of its status alone. Polling or cancelling a finished task retires its pending delivery so it never arrives as a new turn: a poll returns the result now, and cancelling a result this turn can no longer poll discards it. Ordinary tool execution remains process-local and does not survive restart; once its result is persisted, completion delivery may continue on another replica. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
   return subagentCompletionWakeups
@@ -674,6 +676,7 @@ export interface BackgroundTask {
   completionPersistenceFailed?: boolean;
   createdAt: number;
   updatedAt: number;
+  settledAt?: number;
 }
 
 interface TaskBucket {
@@ -834,7 +837,11 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
+      if (
+        task.status !== 'running' &&
+        task.completionPersistencePending !== true &&
+        now - task.updatedAt > COMPLETED_TASK_TTL_MS
+      ) {
         bucket.tasks.delete(taskId);
       }
     }
@@ -859,7 +866,13 @@ export class BackgroundTaskRegistryClass {
     }
     this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
-      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS && bucket.capacityPermits.size === 0) {
+      if (
+        now - bucket.lastAccess > IDLE_BUCKET_TTL_MS &&
+        bucket.capacityPermits.size === 0 &&
+        ![...bucket.tasks.values()].some(
+          (task) => task.status === 'running' || task.completionPersistencePending === true,
+        )
+      ) {
         this.buckets.delete(bucketKey);
         continue;
       }
@@ -1375,6 +1388,7 @@ export class BackgroundTaskRegistryClass {
     const artifactChars = hasRetainedCapacity ? storedArtifact.chars : 0;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'completed',
+      settledAt: Date.now(),
       result: retainedContent,
       artifact,
       error: undefined,
@@ -1548,6 +1562,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
+      settledAt: Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1581,6 +1596,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'cancelled',
+      settledAt: Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1615,7 +1631,14 @@ export class BackgroundTaskRegistryClass {
   }
 
   markCompletionPersistenceFinished(userId: string, conversationId: string, taskId: string): void {
-    this.update(userId, conversationId, taskId, { completionPersistencePending: undefined });
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (bucket == null || task == null) return;
+    /** Even a policy-blocked task must release retention protection. This only
+     * clears lifecycle state; the immutable artifact block remains intact. */
+    task.completionPersistencePending = undefined;
+    task.updatedAt = Date.now();
+    bucket.lastAccess = task.updatedAt;
   }
 
   markCompletionPersistenceFailed(userId: string, conversationId: string, taskId: string): void {
@@ -1694,6 +1717,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
+      settledAt: task.settledAt ?? Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1768,7 +1792,8 @@ export class BackgroundTaskRegistryClass {
   }
 }
 
-export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
+export const backgroundTaskRegistry: BackgroundTaskRegistryClass =
+  new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
 export function buildBackgroundHandleContent(
@@ -1787,7 +1812,7 @@ export function buildBackgroundHandleContent(
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message,
+    message: `${message} The tool field identifies the originating tool, not the polling tool. Status request: ${JSON.stringify({ name: CHECK_BACKGROUND_TASK_NAME, arguments: { background_task_id: task.id } })}`,
   });
 }
 
@@ -1831,11 +1856,56 @@ interface SerializedBackgroundTask {
   /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
   progress: number;
   cancellation_requested?: boolean;
+  /** ISO-8601 dispatch time, the app's serialization for every timestamp. */
+  started_at?: string;
+  /** ISO-8601 terminal time. Absent while the task is still running. */
+  settled_at?: string;
+  /** Dispatch to settlement, or dispatch to this poll while still running. */
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_chars?: number;
+  /** Whether the result has reached the conversation. `pending` results still
+   * arrive as a new turn unless polled or cancelled first. Absent when the task
+   * has no automatic delivery, so only a poll ever surfaces its result. */
+  delivery?: 'pending' | 'delivered' | 'failed';
   note?: string;
   error?: string;
+}
+
+const FAILED_DELIVERY_GUIDANCE =
+  'Automatic delivery failed for some finished tasks (delivery: "failed"); they will not arrive as a new turn. Poll each to collect its result.';
+
+const SUBAGENT_PENDING_DELIVERY_GUIDANCE =
+  'Some finished subagents have not been delivered yet (delivery: "pending"); each will arrive as a new turn. Poll one to collect its result now. Do not report them as finished until then.';
+
+const PENDING_DELIVERY_GUIDANCE =
+  'Some finished tasks have not been delivered yet (delivery: "pending"); each will arrive as a new turn. Poll one to collect its result now, or cancel it so it does not arrive. Do not report these tasks as finished or cancelled until then.';
+
+/**
+ * Model-facing task timings. The registry keeps epoch milliseconds; everything the
+ * app serializes carries ISO-8601 (`toISOString`), so the poll payload does too.
+ * `elapsed_ms` is served alongside them because a polling model has no clock of its
+ * own: without it, "running" carries no age and a caller cannot tell a task that
+ * started seconds ago from one stuck for an hour.
+ *
+ * `createdAt` is the strictly-increasing dispatch stamp, so a same-millisecond
+ * dispatch can read a few milliseconds after its real start and, for an instantly
+ * settled task, after `updatedAt`; clamping keeps `settled_at` from preceding
+ * `started_at` and `elapsed_ms` from going negative.
+ */
+function taskTimings(task: {
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}): Pick<SerializedBackgroundTask, 'started_at' | 'settled_at' | 'elapsed_ms'> {
+  const settled = task.status !== 'running';
+  const settledAt = Math.max(task.updatedAt, task.createdAt);
+  return {
+    started_at: new Date(task.createdAt).toISOString(),
+    ...(settled ? { settled_at: new Date(settledAt).toISOString() } : {}),
+    elapsed_ms: Math.max(0, (settled ? settledAt : Date.now()) - task.createdAt),
+  };
 }
 
 function resultFields(
@@ -1868,6 +1938,69 @@ function taskNote(task: BackgroundTask): Pick<SerializedBackgroundTask, 'note'> 
   return {};
 }
 
+function taskDelivery(task: BackgroundTask): Pick<SerializedBackgroundTask, 'delivery'> {
+  if (task.completionWakeup !== true || task.completionPersistenceFailed === true) {
+    return {};
+  }
+  if (task.resultClaim != null || task.completionWakeupRetired === true) {
+    return { delivery: 'delivered' };
+  }
+  return { delivery: 'pending' };
+}
+
+/** A completion known only to the durable delivery store: dispatched in an earlier
+ * turn, on another replica, or before a restart, and not delivered yet. */
+function serializePendingCompletion(
+  completion: PendingBackgroundCompletion,
+): SerializedBackgroundTask {
+  const settled = completion.result;
+  return {
+    background_task_id: completion.taskId,
+    tool: completion.toolName,
+    status: settled?.status ?? 'running',
+    progress: settled == null ? 0 : 1,
+    started_at: completion.dispatchedAt.toISOString(),
+    ...(settled != null && { settled_at: settled.settledAt.toISOString() }),
+    delivery: 'pending',
+    note:
+      settled == null
+        ? 'Still running outside this turn; its result will arrive as a new turn when it finishes.'
+        : 'Finished, but its result has not been delivered; it will arrive as a new turn unless you poll or cancel it.',
+  };
+}
+
+/** A local task whose durable delivery settled elsewhere (an automatic wake-up
+ * on any replica) no longer holds a local claim; the complete durable listing is
+ * the evidence. An incomplete listing proves nothing, so the local view stands. */
+function reconcileDelivery(
+  task: SerializedBackgroundTask,
+  durablePendingTaskIds: ReadonlySet<string> | undefined,
+  deadTaskIds: ReadonlySet<string>,
+): SerializedBackgroundTask {
+  if (task.delivery !== 'pending' || task.status === 'running') {
+    return task;
+  }
+  if (deadTaskIds.has(task.background_task_id)) {
+    return { ...task, delivery: 'failed' };
+  }
+  if (durablePendingTaskIds == null || durablePendingTaskIds.has(task.background_task_id)) {
+    return task;
+  }
+  return { ...task, delivery: 'delivered' };
+}
+
+/** A completion whose automatic delivery dead-lettered and that this process no
+ * longer holds: never delivered, so only a poll can still collect its result. */
+function serializeDeadCompletion(
+  completion: PendingBackgroundCompletion,
+): SerializedBackgroundTask {
+  return {
+    ...serializePendingCompletion(completion),
+    delivery: 'failed',
+    note: 'Automatic delivery failed; this result will not arrive as a new turn. Poll it to collect the result.',
+  };
+}
+
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
@@ -1880,18 +2013,26 @@ function serializeTask(
     ...(task.status === 'running' && task.cancellationRequestedAt != null
       ? { cancellation_requested: true }
       : {}),
+    ...taskTimings(task),
     ...resultFields(task, includeResult),
+    ...taskDelivery(task),
     ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
   };
 }
 
+/**
+ * A durable receipt is what a poll sees once process-local state is gone (another
+ * replica, or after a restart). It records when the task settled but not when it was
+ * dispatched, so it carries `settled_at` alone: no start, hence no elapsed span.
+ */
 function serializeDurableTask(task: BackgroundToolResultRecord): SerializedBackgroundTask {
   return {
     background_task_id: task.taskId,
     tool: task.toolName,
     status: task.status,
     progress: 1,
+    ...(task.settledAt == null ? {} : { settled_at: task.settledAt.toISOString() }),
     ...(task.status === 'completed' ? { result: task.output } : { error: task.output }),
   };
 }
@@ -1904,6 +2045,9 @@ interface SerializedSubagentTask {
   status: string;
   progress: number;
   progress_detail?: SubagentTaskSnapshot['progress'];
+  started_at?: string;
+  settled_at?: string;
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_claimed?: boolean;
@@ -1911,6 +2055,8 @@ interface SerializedSubagentTask {
   error?: string;
   control_id?: string;
   message?: string;
+  /** A finished subagent whose result will still resume the parent turn. */
+  delivery?: 'pending';
 }
 
 function serializeSubagentSnapshot(
@@ -1930,6 +2076,8 @@ function serializeSubagentSnapshot(
     status: options.status ?? task.status,
     progress: task.status === 'running' ? 0 : 1,
     ...(task.progress == null ? {} : { progress_detail: task.progress }),
+    /** Timings follow the task's own lifecycle, never a control receipt's status. */
+    ...taskTimings(task),
     ...(options.includeResult == null ? {} : { result: options.includeResult }),
     ...(task.resultAvailable ? { result_available: true } : {}),
     ...(task.resultClaimed ? { result_claimed: true } : {}),
@@ -2069,6 +2217,8 @@ export async function runCheckBackgroundTask(params: {
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
   /** Trusted deployment policy. Defaults false for backward compatibility. */
   ordinaryToolCancellation?: boolean;
+  /** Durable view of this conversation's undelivered background completions. */
+  pendingCompletions?: PendingBackgroundCompletionControls;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -2088,7 +2238,10 @@ export async function runCheckBackgroundTask(params: {
     if (task != null) {
       if (action !== 'poll') {
         if (action === 'cancel') {
-          if (params.ordinaryToolCancellation !== true) {
+          /** A finished task has no execution to stop, so the live-cancellation
+           * policy does not apply: cancelling it falls through to the poll path,
+           * which retires its pending delivery. */
+          if (params.ordinaryToolCancellation !== true && task.status === 'running') {
             return JSON.stringify({
               status: 'invalid',
               background_task_id: taskId,
@@ -2207,11 +2360,31 @@ export async function runCheckBackgroundTask(params: {
               });
             }
           }
+          if (durableClaim.status === 'acquired' && task.completionWakeupRetired !== true) {
+            /** The result reaches the agent here, so its automatic delivery is redundant. */
+            await backgroundTaskRegistry
+              .retireCompletionWakeup(
+                userId,
+                conversationId,
+                taskId,
+                'completion claimed by manual poll',
+                { onlyIfUnclaimed: true },
+              )
+              .catch((error: unknown) =>
+                logger.warn(
+                  `[background] Failed to retire the delivery of manually claimed task ${taskId}:`,
+                  error,
+                ),
+              );
+          }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let localClaimNeedsNoDurableConfirmation =
-              localReplay && task.liveArtifactPollRequired === true;
+            const pollOwnsOriginatingGeneration =
+              params.generationId != null && params.generationId === task.messageId;
+            const localClaimAllowed =
+              pollOwnsOriginatingGeneration || task.liveArtifactPollRequired === true;
+            let localClaimNeedsNoDurableConfirmation = localReplay && localClaimAllowed;
             if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
@@ -2259,7 +2432,7 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and completion ownership is being settled. Retry this poll shortly.',
                 });
               }
-              if (task.liveArtifactPollRequired === true) {
+              if (localClaimAllowed) {
                 const localClaim = backgroundTaskRegistry.claimResult(
                   userId,
                   conversationId,
@@ -2285,21 +2458,21 @@ export async function runCheckBackgroundTask(params: {
                       'The task is finished and its result is being made durable. Retry this poll shortly.',
                   });
                 }
-                /** The poll is executing inside the still-unfinished dispatch
-                 * generation, so waiting for the durable row would require
-                 * that generation to end before it can obey its mandatory
-                 * live-artifact poll. The retired unclaimed wakeup plus this
-                 * local manual claim is authoritative for this owner process;
-                 * the persistence retry re-reads and copies the claim after
-                 * the generation finalizes. */
+                /** The poll is executing inside the unfinished dispatch
+                 * generation, or it must deliver a live artifact. Waiting for
+                 * the durable row would require that generation to end first.
+                 * The retired unclaimed wakeup plus this local manual claim is
+                 * authoritative for this owner process; the persistence retry
+                 * re-reads and copies the claim after finalization. */
                 localClaimNeedsNoDurableConfirmation = true;
               }
             }
             /** Ordinary polls claim the durable terminal receipt directly.
              * They never reserve a process-local claim while the receipt is
              * absent: a later poll has a different provider tool-call id and
-             * could never take over that abandoned reservation. The live-
-             * artifact exception above cannot wait for its own generation. */
+             * could never take over that abandoned reservation. A poll owned
+             * by the originating generation cannot wait for that same
+             * generation to finalize its durable response row. */
             if (!localClaimNeedsNoDurableConfirmation) {
               const reconciledClaim = await params.claimBackgroundToolResult({
                 ...durableClaimInput,
@@ -2350,6 +2523,42 @@ export async function runCheckBackgroundTask(params: {
         }
       }
       return JSON.stringify(serializeTask(task, { includeResult: true }));
+    }
+
+    /** A failed lookup must not mask a subagent the controls below can still reach. */
+    let discardFailed = false;
+    if (action === 'cancel' && params.pendingCompletions != null) {
+      let outcome: Awaited<ReturnType<PendingBackgroundCompletionControls['discard']>> =
+        'not_pending';
+      try {
+        outcome = await params.pendingCompletions.discard({ userId, conversationId, taskId });
+      } catch (error) {
+        logger.warn(`[background] Failed to discard pending completion ${taskId}:`, error);
+        discardFailed = true;
+      }
+      if (outcome === 'discarded') {
+        return JSON.stringify({
+          status: 'cancelled',
+          background_task_id: taskId,
+          message: 'The finished result was discarded and will not arrive as a new turn.',
+        });
+      }
+      if (outcome === 'running') {
+        return JSON.stringify({
+          status: 'unavailable',
+          background_task_id: taskId,
+          delivery: 'pending',
+          message:
+            'This task is still running outside this turn and cannot be stopped from here. Its result will arrive as a new turn when it finishes; cancel it then to discard the result.',
+        });
+      }
+      if (outcome === 'delivering') {
+        return JSON.stringify({
+          status: 'delivery_scheduled',
+          background_task_id: taskId,
+          message: 'This result is already being delivered as a new turn.',
+        });
+      }
     }
 
     const subagentTasks = params.subagentTasks;
@@ -2433,6 +2642,15 @@ export async function runCheckBackgroundTask(params: {
       if (durableClaim.status === 'acquired') {
         const durableTask = durableClaim.results.find((result) => result.taskId === taskId);
         if (durableTask != null) {
+          /** The result reaches the agent here, so its automatic delivery is redundant. */
+          await params.pendingCompletions
+            ?.settleClaimed({ userId, conversationId, taskId })
+            .catch((error: unknown) =>
+              logger.warn(
+                `[background] Failed to retire the delivery of manually claimed task ${taskId}:`,
+                error,
+              ),
+            );
           return JSON.stringify(serializeDurableTask(durableTask));
         }
         return JSON.stringify({
@@ -2523,6 +2741,14 @@ export async function runCheckBackgroundTask(params: {
       }
     }
 
+    if (discardFailed) {
+      return JSON.stringify({
+        status: 'unavailable',
+        background_task_id: taskId,
+        message:
+          'The pending result could not be discarded right now. It may still arrive as a new turn; retry the cancel shortly.',
+      });
+    }
     return JSON.stringify({
       status: 'not_found',
       background_task_id: taskId,
@@ -2539,7 +2765,37 @@ export async function runCheckBackgroundTask(params: {
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
-  let listWarning: string | undefined;
+  const listWarnings: string[] = [];
+  let pendingCompletions: PendingBackgroundCompletion[] = [];
+  /** Undelivered task ids from the durable store, when the listing was complete:
+   * a local task absent from it was delivered on this or another replica. */
+  let durablePendingTaskIds: ReadonlySet<string> | undefined;
+  let deadTaskIds: ReadonlySet<string> = new Set();
+  let deadCompletions: PendingBackgroundCompletion[] = [];
+  if (params.pendingCompletions != null) {
+    try {
+      const localTaskIds = new Set(tasks.map((task) => task.id));
+      const durable = await params.pendingCompletions.list({ userId, conversationId });
+      deadTaskIds = new Set(durable.dead.map(({ taskId }) => taskId));
+      /** A dead letter this process no longer holds is still recoverable by a poll. */
+      deadCompletions = durable.dead.filter((completion) => !localTaskIds.has(completion.taskId));
+      pendingCompletions = durable.completions.filter(
+        (completion) => !localTaskIds.has(completion.taskId),
+      );
+      if (durable.complete) {
+        durablePendingTaskIds = new Set(durable.completions.map(({ taskId }) => taskId));
+      } else {
+        listWarnings.push(
+          'More undelivered results exist than could be listed; some not shown may still arrive as new turns.',
+        );
+      }
+    } catch (error) {
+      logger.warn('[background] Failed to list undelivered background completions:', error);
+      listWarnings.push(
+        'Undelivered results from earlier turns could not be listed; some may still arrive as new turns.',
+      );
+    }
+  }
   const completionWakeups = agentUsesSubagentCompletionWakeups(
     params.subagentTasks,
     params.agentId,
@@ -2560,24 +2816,73 @@ export async function runCheckBackgroundTask(params: {
         subagentTasks = params.subagentTasks.store
           .list(params.subagentTasks.scopeId)
           .map((task) => serializeSubagentSnapshot(task));
-        listWarning = `Cross-replica subagent tasks could not be listed: ${error.message}`;
+        listWarnings.push(`Cross-replica subagent tasks could not be listed: ${error.message}`);
       } else {
         throw error;
       }
     }
   }
+  const ordinaryTasks = [
+    ...tasks.map((task) =>
+      reconcileDelivery(
+        serializeTask(task, { includeResult: false }),
+        durablePendingTaskIds,
+        deadTaskIds,
+      ),
+    ),
+    ...pendingCompletions.map(serializePendingCompletion),
+    ...deadCompletions.map(serializeDeadCompletion),
+  ];
+  /** Pending only with durable evidence: whether a subagent's wake-up exists depends on
+   * the policy when it was admitted, not on this request's configuration. */
+  const finishedSubagents = subagentTasks.filter(
+    (task) => task.status !== 'running' && task.result_claimed !== true,
+  );
+  if (finishedSubagents.length > 0 && params.pendingCompletions != null) {
+    try {
+      const wakeups = await params.pendingCompletions.listSubagentWakeups({
+        userId,
+        conversationId,
+      });
+      const waiting = new Set(wakeups.taskIds);
+      subagentTasks = subagentTasks.map((task) =>
+        task.status !== 'running' &&
+        task.result_claimed !== true &&
+        waiting.has(task.background_task_id)
+          ? { ...task, delivery: 'pending' as const }
+          : task,
+      );
+    } catch (error) {
+      logger.warn('[background] Failed to list undelivered subagent completions:', error);
+      listWarnings.push(
+        'Undelivered subagent results could not be checked; some may still arrive as new turns.',
+      );
+    }
+  }
+  /** Work is outstanding until its result reaches the conversation: a finished
+   * task with a pending delivery is still going to resume the agent. */
+  const isOutstanding = (task: { status: string; delivery?: string }): boolean =>
+    task.status === 'running' || task.delivery === 'pending' || task.delivery === 'failed';
+  const outstanding =
+    ordinaryTasks.filter(isOutstanding).length + subagentTasks.filter(isOutstanding).length;
+  const isFinishedPending = (task: { status: string; delivery?: string }): boolean =>
+    task.status !== 'running' && task.delivery === 'pending';
+  const guidance = [
+    ...(ordinaryTasks.some(isFinishedPending) ? [PENDING_DELIVERY_GUIDANCE] : []),
+    ...(ordinaryTasks.some((task) => task.delivery === 'failed') ? [FAILED_DELIVERY_GUIDANCE] : []),
+    ...(subagentTasks.some(isFinishedPending) ? [SUBAGENT_PENDING_DELIVERY_GUIDANCE] : []),
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? [SUBAGENT_WAKEUP_GUIDANCE]
+      : []),
+  ];
   logger.debug(
-    `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
+    `[background] check_background_task listed ${ordinaryTasks.length + subagentTasks.length} task(s), ${outstanding} outstanding`,
   );
   return JSON.stringify({
-    tasks: [
-      ...tasks.map((task) => serializeTask(task, { includeResult: false })),
-      ...subagentTasks,
-    ],
-    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
-      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
-      : {}),
-    ...(listWarning != null && { partial: true, warning: listWarning }),
+    tasks: [...ordinaryTasks, ...subagentTasks],
+    outstanding,
+    ...(guidance.length > 0 && { message: guidance.join(' ') }),
+    ...(listWarnings.length > 0 && { partial: true, warning: listWarnings.join(' ') }),
   });
 }
 

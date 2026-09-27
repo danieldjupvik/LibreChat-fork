@@ -3,22 +3,53 @@ import { GraphRecursionError } from '@langchain/langgraph';
 import {
   GENERIC_PROVIDER_ERROR,
   getLangChainErrorCode,
+  getProviderErrorMessage,
   resolveLangChainError,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
+  getAgentErrorMetadata,
   AGENT_ATTACHMENT_LIMIT_EXCEEDED,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isStepLimitError,
 } from './errors';
+import { MCPAuthenticationRejectedError, MCPAuthenticationRefreshError } from '~/mcp/errors';
+import { OboTokenResolutionError } from '~/mcp/oauth/obo';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 describe('isFatalAgentInitializationError', () => {
   it.each([
-    ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-    ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
-    ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
-    AGENT_ATTACHMENT_LIMIT_EXCEEDED,
-    AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
-  ])('classifies %s as fatal', (code) => {
+    new OpenIDReauthRequiredError('Please sign in again'),
+    new MCPAuthenticationRejectedError('private-mcp', false),
+    new MCPAuthenticationRejectedError('private-mcp', true),
+    new MCPAuthenticationRefreshError(new Error('temporarily unavailable')),
+    new OboTokenResolutionError('session_refresh_failed', 'Please sign in again', false),
+    new OboTokenResolutionError('session_refresh_failed', 'Retry later', true),
+  ])('never hides a credential outcome behind optional-tool fallback: %s', (error) => {
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(isFatalAgentInitializationError(error, { allowExpectedMCPFallback: true })).toBe(true);
+  });
+
+  it('propagates cancellation even when optional MCP fallback is allowed', () => {
+    const abort = new DOMException('Stopped', 'AbortError');
+    const controller = new AbortController();
+    expect(isFatalAgentInitializationError(abort, { signal: controller.signal })).toBe(false);
+    controller.abort(abort);
+    expect(
+      isFatalAgentInitializationError(abort, {
+        allowExpectedMCPFallback: true,
+        signal: controller.signal,
+      }),
+    ).toBe(true);
+  });
+  it.each(
+    [
+      ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
+      ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
+      ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
+      AGENT_ATTACHMENT_LIMIT_EXCEEDED,
+      AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
+    ].filter((code): code is string => typeof code === 'string'),
+  )('classifies %s as fatal', (code) => {
     expect(isFatalAgentInitializationError({ code })).toBe(true);
   });
 
@@ -38,6 +69,10 @@ describe('isFatalAgentInitializationError', () => {
       expect(isFatalAgentInitializationError(error)).toBe(false);
     },
   );
+
+  it('does not classify a missing code as fatal when an enum member is unavailable', () => {
+    expect(isFatalAgentInitializationError(new Error('ordinary failure'))).toBe(false);
+  });
 });
 
 describe('LangChain provider error text', () => {
@@ -108,6 +143,58 @@ describe('LangChain provider error text', () => {
     it('coerces an Error whose message was overwritten with an object', () => {
       const error = Object.assign(new Error('replaced'), { message: { error: 'rate limited' } });
       expect(getUserFacingProviderError(error, false)).toBe('[object Object]');
+    });
+  });
+
+  describe('getProviderErrorMessage', () => {
+    it('reports the provider wording without the docs URL', () => {
+      const error = new Error(`400 masking unavailable${troubleshooting('MODEL_NOT_FOUND')}`);
+      expect(getProviderErrorMessage(error)).toBe('400 masking unavailable');
+    });
+
+    it('strips a troubleshooting suffix crossing the output boundary', () => {
+      const explanation = 'x'.repeat(1990);
+      const error = new Error(`${explanation}${troubleshooting('INVALID_PROMPT_INPUT')}`);
+      expect(getProviderErrorMessage(error)).toBe(explanation);
+    });
+
+    it('bounds scanning before stripping a multi-megabyte suffix', () => {
+      const explanation = 'x'.repeat(2000);
+      const scan = jest.spyOn(String.prototype, 'indexOf');
+      expect(getProviderErrorMessage(new Error(explanation + ' '.repeat(2_000_000)))).toBe(
+        explanation,
+      );
+      expect(scan.mock.contexts.every((text) => text.length <= 2256)).toBe(true);
+      scan.mockRestore();
+    });
+
+    it('bounds an unbounded provider body', () => {
+      const error = new Error('x'.repeat(4096));
+      expect(getProviderErrorMessage(error)).toBe('x'.repeat(2000));
+    });
+
+    it.each([
+      ['a rejection thrown as a string', 'proxy refused the request', 'proxy refused the request'],
+      ['an error with nothing to say', new Error('   '), undefined],
+      [
+        'a non-string message',
+        Object.assign(new Error('replaced'), { message: { a: 1 } }),
+        undefined,
+      ],
+      ['a non-object rejection', 42, undefined],
+    ])('reads %s defensively', (_case, error, expected) => {
+      expect(getProviderErrorMessage(error)).toBe(expected);
+    });
+
+    it('contains a hostile message accessor', () => {
+      const error = Object.create(null, {
+        message: {
+          get() {
+            throw new Error('hostile message getter');
+          },
+        },
+      });
+      expect(getProviderErrorMessage(error)).toBeUndefined();
     });
   });
 });
@@ -181,5 +268,41 @@ describe('isStepLimitError', () => {
     { name: 'GraphInterrupt' },
   ])('leaves case %# on the ordinary error path', (error) => {
     expect(isStepLimitError(error)).toBe(false);
+  });
+});
+
+describe('getAgentErrorMetadata', () => {
+  it.each([
+    [new OpenIDReauthRequiredError('Sign in again'), 401, undefined],
+    [new MCPAuthenticationRejectedError('private', false), 403, 'MCP_AUTHENTICATION_REJECTED'],
+    [new MCPAuthenticationRefreshError(), 503, 'MCP_AUTHENTICATION_REFRESH_FAILED'],
+  ])('preserves typed MCP statusCode and code: %s', (error, status, code) => {
+    expect(getAgentErrorMetadata(error)).toEqual({ status, ...(code ? { code } : {}) });
+  });
+
+  it.each([false, true])(
+    'classifies OBO failure without rewriting the original error: retryable=%s',
+    (retryable) => {
+      const error = new OboTokenResolutionError('exchange_failed', 'Exchange failed', retryable);
+      expect(getAgentErrorMetadata(error)).toEqual({
+        status: retryable ? 503 : 403,
+        code: retryable ? 'MCP_AUTHENTICATION_REFRESH_FAILED' : 'MCP_AUTHENTICATION_REJECTED',
+        retryable,
+      });
+      expect(error.reason).toBe('exchange_failed');
+      expect(error).not.toHaveProperty('statusCode');
+    },
+  );
+
+  it('keeps status precedence and code-only provider failures', () => {
+    expect(getAgentErrorMetadata({ status: 409, statusCode: 401, code: 'RUN_REPLACED' })).toEqual({
+      status: 409,
+      code: 'RUN_REPLACED',
+    });
+    expect(getAgentErrorMetadata({ code: 'ERR_REMOTE' })).toEqual({ code: 'ERR_REMOTE' });
+  });
+
+  it.each([null, 'bad', 399, 600, 401.5, NaN])('rejects invalid outward status: %s', (status) => {
+    expect(getAgentErrorMetadata({ status })).toEqual({});
   });
 });
