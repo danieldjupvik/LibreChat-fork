@@ -99,9 +99,10 @@ const VISIBLE_LINES = 15;
 
 interface OutputRendererProps {
   text: string;
+  copyText?: string;
 }
 
-export default function OutputRenderer({ text }: OutputRendererProps) {
+export default function OutputRenderer({ text, copyText }: OutputRendererProps) {
   const localize = useLocalize();
   const { text: displayText, rawError, error, isJson } = useMemo(() => extractText(text), [text]);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -110,9 +111,9 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
 
   const handleCopy = useCallback(() => {
     setIsCopied(true);
-    copy(displayText, { format: 'text/plain' });
+    copy(copyText ?? displayText, { format: 'text/plain' });
     setTimeout(() => setIsCopied(false), 3000);
-  }, [displayText]);
+  }, [copyText, displayText]);
 
   if (!displayText) {
     return null;

@@ -53,6 +53,7 @@ const {
   createRepositoryInstructionLoader,
   resolveAttachedWorkspaceCommandTimeoutMax,
   resolveAttachedWorkspaceQueueWaitMs,
+  resolveAttachedWorkspaceRequestTimeoutMs,
   createContextProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
@@ -1192,6 +1193,8 @@ async function loadToolDefinitionsWrapper({
     const result = await reinitMCPServer({
       signal,
       user: req.user,
+      streamId,
+      jobCreatedAt,
       oauthStart,
       flowManager,
       serverName,
@@ -1223,6 +1226,8 @@ async function loadToolDefinitionsWrapper({
     const result = await reinitMCPServer({
       signal,
       user: req.user,
+      streamId,
+      jobCreatedAt,
       forceNew: true,
       oauthStart,
       flowManager,
@@ -1375,6 +1380,8 @@ async function loadToolDefinitionsWrapper({
         const result = await reinitMCPServer({
           signal,
           user: req.user,
+          streamId,
+          jobCreatedAt,
           serverName,
           configServers,
           userMCPAuthMap,
@@ -2306,6 +2313,9 @@ async function loadToolsForExecution({
                 codeExecutionContext.codeWorkspace?.maxCommandTimeoutMs,
               ),
               maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+                codeExecutionContext.codeEnvironmentConfigSchema,
+              ),
+              maxRequestTimeoutMs: resolveAttachedWorkspaceRequestTimeoutMs(
                 codeExecutionContext.codeEnvironmentConfigSchema,
               ),
             })
