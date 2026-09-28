@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const axios = require('axios');
-const { logger } = require('../../../config');
+const { logger } = require('@librechat/data-schemas');
 const requireJwtAuth = require('../../middleware/requireJwtAuth');
 
 const lagoBaseURL = process.env.LAGO_BASE_URL || 'https://lago.danieldjupvik.com';

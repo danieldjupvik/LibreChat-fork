@@ -18,13 +18,6 @@ export const getCmdKey = (): string => {
   return isMacOS() ? '⌘' : 'Ctrl';
 };
 
-// Add global type for window.lastThemeChange
-declare global {
-  interface Window {
-    lastThemeChange?: number;
-  }
-}
-
 /**
  * Properly toggle between light and dark themes using the same methods as the ThemeContext
  * This implements the core theme switching logic matching the app's implementation
@@ -59,7 +52,7 @@ export const toggleTheme = (): string => {
   window.dispatchEvent(new Event('storage'));
 
   // Track the last theme change time (used by the theme selector component)
-  window.lastThemeChange = Date.now();
+  window.lastThemeChange = { ...window.lastThemeChange, scheme: Date.now() };
 
   return newTheme;
 };
