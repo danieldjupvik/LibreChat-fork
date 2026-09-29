@@ -1,0 +1,5 @@
+# Upstream-sync conflicts with NO text markers (binary / modify-delete / rename, etc.).
+# git could not write conflict markers, so 'git add -A' auto-staged one side of each.
+# Reconcile each path (upstream vs fork intent), then DELETE this file.
+# CI (sync-pr-guard) blocks merge while this file exists. Lines are 'git status' codes:
+UD CLAUDE.md
